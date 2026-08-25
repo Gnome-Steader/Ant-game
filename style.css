@@ -1,0 +1,133 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+}
+
+body {
+    background-color: #111;
+    color: #eee;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+#game-container {
+    position: relative;
+    width: 800px;
+    height: 600px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+    background-color: #222;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+}
+
+#ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.hud-panel {
+    background: rgba(20, 20, 20, 0.85);
+    border: 1px solid #444;
+    padding: 10px 15px;
+    pointer-events: auto;
+}
+
+#top-hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #5c4033;
+}
+
+.resource-group {
+    display: flex;
+    gap: 20px;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.res-seeds { color: #f4d03f; }
+.res-meat { color: #e74c3c; }
+
+#raid-warning {
+    color: #ff3333;
+    font-weight: bold;
+    font-size: 18px;
+    animation: flash 1s infinite;
+    display: none;
+}
+
+@keyframes flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+#bottom-hud {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    border-top: 2px solid #5c4033;
+}
+
+button {
+    background: #333;
+    color: #fff;
+    border: 1px solid #666;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-weight: bold;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+button:hover { background: #444; }
+button:active { background: #222; }
+button:disabled {
+    background: #222;
+    color: #555;
+    cursor: not-allowed;
+    border-color: #333;
+}
+
+.cost {
+    display: block;
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 4px;
+}
+
+#context-menu {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+}
+
+#plug-btn {
+    background: #880000;
+    border-color: #ff4444;
+    font-size: 16px;
+    padding: 10px 20px;
+}
+#plug-btn:hover { background: #aa0000; }
