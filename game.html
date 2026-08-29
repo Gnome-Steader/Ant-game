@@ -62,7 +62,6 @@
         .tool-attack.active { border-color: #e74c3c; box-shadow: 0 0 10px #e74c3c; }
         .cost { display: block; font-size: 11px; color: #aaa; margin-top: 4px; font-weight: normal; }
 
-        /* Non-blocking corner badge for Super Major plug-mode -- never covers the viewport or eats input */
         #context-menu {
             position: absolute; top: 84px; right: 16px;
             display: none; flex-direction: column; align-items: stretch; border-radius: 8px;
@@ -164,8 +163,8 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const TILE_SIZE = 40;
-const SURFACE_Y = 15;          // y=0 is the world's fixed "ground level" datum ants are born near
-const CHUNK_SIZE = 16;         // tiles per chunk edge
+const SURFACE_Y = 15;          
+const CHUNK_SIZE = 16;         
 
 const camera = { x: 0, y: 0, zoom: 1.2 };
 const keys = { w: false, a: false, s: false, d: false, arrowup: false, arrowdown: false, arrowleft: false, arrowright: false, ' ': false };
@@ -195,22 +194,22 @@ resize();
 
 /**
  * INFINITE WORLD (chunked, procedurally generated, sparse)
- * Tile values: 0 = open air/tunnel, 1 = dirt/wall, 2 = rock (indestructible)
  */
-const chunks = new Map(); // key "cx,cy" -> Uint8Array(CHUNK_SIZE*CHUNK_SIZE)
-const decorations = new Map(); // key "cx,cy" -> array of {type,x,y,...} in world tile coords, surface only
+const chunks = new Map(); 
+const decorations = new Map(); 
 
 function chunkKey(cx, cy) { return cx + ',' + cy; }
 
-// Deterministic hash-based pseudo-random per tile/chunk (so regenerating a chunk is stable)
 function hash2(x, y) {
     let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
     return h - Math.floor(h);
 }
 
 function surfaceHeightAt(gx) {
-    // Gently undulating surface line so it doesn't feel like a flat slab forever
-    return SURFACE_Y + Math.round(Math.sin(gx * 0.07) * 2 + Math.sin(gx * 0.021) * 3);
+    // Gently undulating surface line + larger rolling hills for distinct dirt banks
+    let base = SURFACE_Y + Math.round(Math.sin(gx * 0.07) * 2 + Math.sin(gx * 0.021) * 3);
+    let hill = Math.round(Math.sin(gx * 0.004) * 12); 
+    return base + hill;
 }
 
 function generateChunk(cx, cy) {
@@ -225,10 +224,7 @@ function generateChunk(cx, cy) {
             let val = (gy < surf) ? 0 : 1;
 
             if (val === 1) {
-                // Scatter indestructible rocks underground
                 if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2;
-                // Carve occasional natural dirt-bank pockets (small open caverns) that read as
-                // "new spots to dig a nest" a bit away from the surface
                 const cavernNoise = hash2(gx * 0.09 + 50, gy * 0.09 + 50);
                 if (gy > surf + 4 && cavernNoise > 0.965) {
                     val = 0;
@@ -238,8 +234,6 @@ function generateChunk(cx, cy) {
         }
     }
 
-    // Decorations: rocks/pebbles/grass tufts on the surface strip, plus occasional visible dirt-bank
-    // faces (exposed vertical faces the player can spot and dig into for a "new nest site")
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const gx = baseX + lx;
         const surf = surfaceHeightAt(gx);
@@ -248,13 +242,17 @@ function generateChunk(cx, cy) {
             if (r > 0.82) decos.push({ type: 'grass', x: gx, y: surf - 1 });
             else if (r > 0.74) decos.push({ type: 'pebble', x: gx, y: surf - 1 });
             else if (r > 0.71) decos.push({ type: 'mushroom', x: gx, y: surf - 1 });
+            
+            // Spawn natural seeds in the world during generation
+            if (hash2(gx * 4.1, 88.8) > 0.95) {
+                state.surfaceItems.push({ type: 'seed', x: gx, y: surf - 1 });
+                state.jobs.push({ type: 'HARVEST', x: gx, y: surf - 1, resourceType: 'seed', assigned: false });
+            }
         }
-        // Dirt-bank marker: a distinctive outcrop a short walk from spawn, flagged for the minimap/visuals
         if (hash2(gx * 1.7 + 200, cy * 3.3 + 200) > 0.992) {
             decos.push({ type: 'bank_marker', x: gx, y: surfaceHeightAt(gx) });
         }
     }
-    // A few big background rocks scattered underground for atmosphere (visual only, drawn behind dirt)
     for (let i = 0; i < 3; i++) {
         const lx = Math.floor(hash2(cx * 13 + i, cy * 17 + i) * CHUNK_SIZE);
         const ly = Math.floor(hash2(cx * 19 + i, cy * 23 + i) * CHUNK_SIZE);
@@ -293,7 +291,6 @@ function isRock(gx, gy) { return getTile(gx, gy) === 2; }
 
 function initMap() {
     const centerX = 0;
-    // Carve the starting nest around world origin
     for (let y = SURFACE_Y - 1; y < SURFACE_Y + 5; y++) setTile(centerX, y, 0);
     for (let cy = SURFACE_Y + 5; cy <= SURFACE_Y + 7; cy++) {
         for (let cx = centerX - 3; cx <= centerX + 3; cx++) setTile(cx, cy, 0);
@@ -317,7 +314,6 @@ const state = {
 state.queenHungerDrain = 0.012;
 state.brood = [];
 
-// Asset Registry
 const ASSETS = {
     queen: { src: 'https://gnome-steader.github.io/Ant-game/queen.png', img: new Image(), loaded: false, fallback: '#9b59b6' },
     minor: { src: 'https://gnome-steader.github.io/Ant-game/minor.png', img: new Image(), loaded: false, fallback: '#f1c40f' },
@@ -333,9 +329,6 @@ Object.values(ASSETS).forEach(asset => {
     asset.img.onerror = () => asset.loaded = false;
 });
 
-/**
- * GAME JUICE
- */
 class Particle {
     constructor(x, y, color, speed = 4, size = null, gravity = 0) {
         this.x = x; this.y = y;
@@ -379,9 +372,6 @@ function toast(msg) {
     setTimeout(() => el.remove(), 3000);
 }
 
-/**
- * PHYSICS & COLLISION
- */
 function resolveCollision(entity) {
     const radius = TILE_SIZE * 0.35;
     const left = entity.x - radius, right = entity.x + radius;
@@ -429,9 +419,6 @@ function lineCrossesWall(x1, y1, x2, y2) {
     return false;
 }
 
-/**
- * PATHFINDING (A*) — bounded search radius so it stays fast in an infinite world
- */
 function heuristic(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
 function findPath(startX, startY, endX, endY, isEnemy = false, maxRadius = 40) {
     if (startX === endX && startY === endY) return [];
@@ -474,9 +461,6 @@ function findPath(startX, startY, endX, endY, isEnemy = false, maxRadius = 40) {
     return null;
 }
 
-/**
- * ENTITIES & COMBAT
- */
 const STATS = {
     queen: { hp: 200, dmg: 0, speed: 1.1 },
     minor: { hp: 15, dmg: 2, speed: 2.2 },
@@ -485,9 +469,9 @@ const STATS = {
     army_ant: { hp: 25, dmg: 5, speed: 2.5 }
 };
 
-const EGG_TIME = 1200;   // 20s
-const LARVA_TIME = 1800; // 30s (feeding required partway through)
-const PUPA_TIME = 1200;  // 20s
+const EGG_TIME = 1200;   
+const LARVA_TIME = 1800; 
+const PUPA_TIME = 1200;  
 
 function makeBrood(x, y, willHatchAs = 'minor') {
     return {
@@ -497,7 +481,6 @@ function makeBrood(x, y, willHatchAs = 'minor') {
     };
 }
 
-// Prey bugs — must be hunted for meat, flee when threatened
 class Prey {
     constructor(x, y) {
         this.x = x; this.y = y;
@@ -547,11 +530,10 @@ class Prey {
 }
 
 function spawnPrey() {
-    if (state.flies.length >= 10) return;
-    let queen = state.entities.find(e => e.type === 'queen');
-    let originX = queen ? queen.x : 0;
-    // Scatter widely so exploring finds more bugs, not just a huddle at spawn
-    let gx = Math.round(originX / TILE_SIZE) + Math.floor((Math.random() - 0.5) * 80);
+    if (state.flies.length >= 25) return;
+    // Spawn around the camera so exploration reveals bugs
+    let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
+    let gx = originX + Math.floor((Math.random() - 0.5) * 160);
     let surf = surfaceHeightAt(gx);
     let gy = surf - 1 - Math.floor(Math.random() * 4);
     state.flies.push(new Prey(gx * TILE_SIZE + 20, gy * TILE_SIZE + 20));
@@ -581,7 +563,6 @@ class Ant {
         if (this.alertTimer > 0) this.alertTimer--;
         this.speed = (this.state === 'DEFENDING') ? 0 : this.baseSpeed;
 
-        // DIRECT PLAYER CONTROL — always takes priority, never gets blocked by AI or UI state
         if (state.controlledAnt === this) {
             this.handlePlayerControl();
             resolveCollision(this);
@@ -600,7 +581,6 @@ class Ant {
             return;
         }
 
-        // COMBAT SYSTEM (colony ants defending)
         if (this.attackTimer > 0) this.attackTimer--;
         let target = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.2);
         if (target) {
@@ -627,7 +607,6 @@ class Ant {
             return;
         }
 
-        // MOVEMENT
         if (this.path.length > 0) {
             let target = this.path[0];
             let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
@@ -648,7 +627,6 @@ class Ant {
         resolveCollision(this);
     }
 
-    // ARMY ANTS: fight to the death, charge straight at the colony's brood/queen/ants, never despawn on a timer
     updateArmyAntAI() {
         if (this.attackTimer > 0) this.attackTimer--;
 
@@ -671,8 +649,6 @@ class Ant {
             return;
         }
 
-        // No ant in melee range: charge toward nearest brood if closer than the queen, else the queen.
-        // This is a HARD priority — army ants beeline for the nest's brood, they don't wander.
         let nearestBrood = null, nearestBroodDist = Infinity;
         for (let b of state.brood) {
             if (b.carriedBy) continue;
@@ -681,7 +657,6 @@ class Ant {
         }
         let queen = state.entities.find(e => e.type === 'queen');
 
-        // Eat brood on contact
         if (nearestBrood && nearestBroodDist < TILE_SIZE * 0.7) {
             let bx = nearestBrood.x * TILE_SIZE + 20, by = nearestBrood.y * TILE_SIZE + 20;
             state.brood = state.brood.filter(b => b !== nearestBrood);
@@ -720,7 +695,6 @@ class Ant {
                 this.wobble += 0.4;
             }
         } else if (chaseTarget) {
-            // No path found (blocked by walls) — dig straight through toward the target like a real raid would breach a nest
             let dgx = this.gx + Math.sign(chaseTarget.gx - this.gx);
             let dgy = this.gy + Math.sign(chaseTarget.gy - this.gy);
             if (isWall(dgx, dgy) && !isRock(dgx, dgy) && Math.random() < 0.02) {
@@ -749,12 +723,15 @@ class Ant {
     handlePlayerControl() {
         let moveSpeedMult = this.type === 'queen' ? 1.0 : 1.5;
         let dx = 0, dy = 0;
-        if (keys.arrowup) dy -= this.speed * moveSpeedMult;
-        if (keys.arrowdown) dy += this.speed * moveSpeedMult;
-        if (keys.arrowleft) dx -= this.speed * moveSpeedMult;
-        if (keys.arrowright) dx += this.speed * moveSpeedMult;
+        let currentSpeed = this.baseSpeed; // Use base speed to calculate intent so we can break out of plug mode
+
+        if (keys.arrowup) dy -= currentSpeed * moveSpeedMult;
+        if (keys.arrowdown) dy += currentSpeed * moveSpeedMult;
+        if (keys.arrowleft) dx -= currentSpeed * moveSpeedMult;
+        if (keys.arrowright) dx += currentSpeed * moveSpeedMult;
 
         if (dx !== 0 || dy !== 0) {
+            if (this.state === 'DEFENDING') this.state = 'IDLE'; // Break out of plug mode automatically
             this.x += dx; this.y += dy;
             this.angle = Math.atan2(dy, dx);
             this.wobble += 0.5;
@@ -768,7 +745,7 @@ class Ant {
     }
 
     performManualAction() {
-        if (this.type === 'queen') return; // queen can only be walked around
+        if (this.type === 'queen') return;
 
         let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.5);
         if (enemy) {
@@ -822,7 +799,6 @@ class Ant {
                 this.carriedResource = null; this.state = 'IDLE';
                 return;
             }
-            // Feed a hungry larva if we're standing on/next to one
             let larvaHere = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === this.gx && b.y === this.gy);
             if (larvaHere) {
                 larvaHere.fed = true; larvaHere.needsFood = false;
@@ -846,16 +822,31 @@ class Ant {
             return;
         }
 
-        // Nothing carried: feed hungry larva standing here first if we have food to spend from the colony stockpile,
-        // then pick up brood, then pick up a resource, then dig.
         let larvaHere2 = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === this.gx && b.y === this.gy);
         let itemHere = state.surfaceItems.find(i => i.x === this.gx && i.y === this.gy);
-        if (larvaHere2 && itemHere) {
-            state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere);
-            larvaHere2.fed = true; larvaHere2.needsFood = false;
-            spawnParticles(this.x, this.y, '#2ecc71', 10, 5);
-            spawnText(this.x, this.y - 15, "Larva Fed!", "#2ecc71");
-            return;
+        
+        if (larvaHere2) {
+            if (itemHere) {
+                state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere);
+                larvaHere2.fed = true; larvaHere2.needsFood = false;
+                spawnParticles(this.x, this.y, '#2ecc71', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed!", "#2ecc71");
+                return;
+            } else if (state.resources.seeds > 0) {
+                state.resources.seeds--;
+                larvaHere2.fed = true; larvaHere2.needsFood = false;
+                spawnParticles(this.x, this.y, '#2ecc71', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed!", "#2ecc71");
+                updateUI();
+                return;
+            } else if (state.resources.meat > 0) {
+                state.resources.meat--;
+                larvaHere2.fed = true; larvaHere2.needsFood = false;
+                spawnParticles(this.x, this.y, '#2ecc71', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed!", "#2ecc71");
+                updateUI();
+                return;
+            }
         }
 
         let broodHere = state.brood.find(b => !b.carriedBy && b.x === this.gx && b.y === this.gy);
@@ -927,7 +918,6 @@ class Ant {
                 }
             }
 
-            // Hunting: minors/majors will proactively go kill nearby prey if idle and none are already being chased
             if (!this.job && (this.type === 'minor' || this.type === 'major') && state.flies.length > 0 && Math.random() < 0.02) {
                 let huntedIds = state.entities.filter(e => e.huntTargetId).map(e => e.huntTargetId);
                 let prey = state.flies.find(f => !huntedIds.includes(f.id) && Math.hypot(f.x - this.x, f.y - this.y) < TILE_SIZE * 14);
@@ -1162,12 +1152,11 @@ function drawBroodShape(x, y, stage) {
  * GAME LOGIC
  */
 function respawnSeeds() {
-    let queen = state.entities.find(e => e.type === 'queen');
-    let originX = queen ? queen.gx : 0;
-    let toSpawn = 3 + Math.floor(Math.random() * 3);
+    let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
+    let toSpawn = 3 + Math.floor(Math.random() * 4);
     let spawned = 0;
-    for (let i = 0; i < toSpawn && state.surfaceItems.length < 60; i++) {
-        let rx = originX + Math.floor((Math.random() - 0.5) * 100);
+    for (let i = 0; i < toSpawn && state.surfaceItems.length < 150; i++) {
+        let rx = originX + Math.floor((Math.random() - 0.5) * 160);
         let surf = surfaceHeightAt(rx);
         let ry = surf - 1 - Math.floor(Math.random() * 4);
         if (isWall(rx, ry)) continue;
@@ -1236,8 +1225,8 @@ function triggerRaid() {
     triggerShake(20);
     toast('⚠️ Wave ' + state.wave + ': Army ants are charging your brood!');
 
-    // Escalating waves — each one bigger than the last, scaling faster than a colony that isn't growing can handle
-    let antCount = Math.round(5 + Math.pow(state.wave, 1.6) * 2);
+    // Exponentially larger waves each time to force max speed colony growth
+    let antCount = Math.round(5 + Math.pow(state.wave, 1.8) * 2);
     let queen = state.entities.find(e => e.type === 'queen');
     let originGx = queen ? queen.gx : 0, originGy = queen ? queen.gy : SURFACE_Y;
 
@@ -1255,7 +1244,6 @@ function triggerRaid() {
         state.postBattleTimer = 600;
         document.getElementById('raid-warning').style.display = 'none';
         state.wave++;
-        // NOTE: army ants are no longer force-removed here — any survivors keep fighting/hunting until they die for real.
         spawnText(canvas.width / 2, canvas.height / 2, "MAIN WAVE OVER — SURVIVORS REMAIN!", "#e74c3c", 20);
     }, antCount * 400 + 4000);
 }
@@ -1327,7 +1315,6 @@ document.getElementById('release-btn').addEventListener('click', () => {
     document.getElementById('context-menu').style.display = 'none';
 });
 
-// Spawning now lays an EGG tagged with the ant type it will hatch into, instead of instantly creating the ant.
 function buyAnt(type, seedCost, meatCost) {
     if (state.resources.seeds >= seedCost && state.resources.meat >= meatCost) {
         state.resources.seeds -= seedCost; state.resources.meat -= meatCost;
@@ -1380,7 +1367,7 @@ function updateActionPrompt() {
     else if (ant.state === 'CARRYING_RESOURCE' && larvaHere) msg = "SPACE: Feed larva";
     else if (ant.state === 'CARRYING_RESOURCE') msg = "SPACE: Drop resource";
     else if (ant.state === 'CARRYING_BROOD') msg = "SPACE: Set down brood";
-    else if (larvaHere && itemHere) msg = "SPACE: Feed larva";
+    else if (larvaHere && (itemHere || state.resources.seeds > 0 || state.resources.meat > 0)) msg = "SPACE: Feed larva";
     else if (broodHere) msg = "SPACE: Pick up brood";
     else if (itemHere) msg = "SPACE: Pick up " + itemHere.type;
     else msg = null;
@@ -1485,13 +1472,11 @@ function draw() {
     ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-canvas.width / 2 - camera.x, -canvas.height / 2 - camera.y);
 
-    // Visible world bounds in tiles, generously padded
     const viewLeft = camera.x - 4, viewRight = camera.x + canvas.width / camera.zoom + 4;
     const viewTop = camera.y - 4, viewBottom = camera.y + canvas.height / camera.zoom + 4;
     const gxMin = Math.floor(viewLeft / TILE_SIZE), gxMax = Math.ceil(viewRight / TILE_SIZE);
     const gyMin = Math.floor(viewTop / TILE_SIZE), gyMax = Math.ceil(viewBottom / TILE_SIZE);
 
-    // Sky background across the visible strip above ground
     let skyGrad = ctx.createLinearGradient(0, gyMin * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE + 40);
     skyGrad.addColorStop(0, '#B8CB5A');
     skyGrad.addColorStop(1, '#8fa63e');
@@ -1500,7 +1485,6 @@ function draw() {
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(gxMin * TILE_SIZE, SURFACE_Y * TILE_SIZE, (gxMax - gxMin) * TILE_SIZE, (gyMax - gyMin) * TILE_SIZE);
 
-    // Tiles (dirt / rock)
     for (let gy = gyMin; gy <= gyMax; gy++) {
         for (let gx = gxMin; gx <= gxMax; gx++) {
             const t = getTile(gx, gy);
@@ -1521,7 +1505,6 @@ function draw() {
         }
     }
 
-    // Decorations (surface only, drawn from chunk decoration lists that intersect the view)
     const cxMin = Math.floor(gxMin / CHUNK_SIZE) - 1, cxMax = Math.floor(gxMax / CHUNK_SIZE) + 1;
     const cyMin = Math.floor(gyMin / CHUNK_SIZE) - 1, cyMax = Math.floor(gyMax / CHUNK_SIZE) + 1;
     for (let ccy = cyMin; ccy <= cyMax; ccy++) {
@@ -1601,7 +1584,6 @@ function drawDecoration(d) {
         ctx.fillStyle = '#c0392b';
         ctx.beginPath(); ctx.ellipse(px, py, 7, 5, 0, Math.PI, Math.PI * 2); ctx.fill();
     } else if (d.type === 'bank_marker') {
-        // A distinctive exposed dirt-bank outcrop — a visual hint of a good new nest site
         ctx.fillStyle = 'rgba(139, 90, 43, 0.5)';
         ctx.beginPath(); ctx.arc(px, py - 4, 22, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#d4a574'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
