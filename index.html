@@ -478,7 +478,7 @@ function findPath(startX, startY, endX, endY, isEnemy = false, maxRadius = 40) {
 }
 
 const STATS = {
-    queen: { hp: 200, dmg: 0, speed: 1.1 },
+    queen: { hp: 200, dmg: 8, speed: 1.1 },
     minor: { hp: 15, dmg: 2, speed: 2.2 },
     major: { hp: 40, dmg: 8, speed: 1.6 },
     super_major: { hp: 80, dmg: 15, speed: 1.2 },
@@ -726,6 +726,30 @@ class Ant {
     }
 
     updateQueenAI() {
+        if (this.attackTimer > 0) this.attackTimer--;
+        
+        // Queen fights back ONLY if an army ant attacks her/is in melee range
+        let target = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2)**2);
+        if (target) {
+            this.path = [];
+            this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+            if (this.attackTimer <= 0) {
+                target.hp -= this.dmg;
+                target.flash = 10;
+                target.underAttack = 300;
+                this.attackTimer = 30;
+                spawnParticles(target.x, target.y, '#ff0000', 6, 6);
+                triggerShake(2);
+
+                const lungeDist = 8;
+                const lungeX = this.x + Math.cos(this.angle) * lungeDist;
+                const lungeY = this.y + Math.sin(this.angle) * lungeDist;
+                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+            }
+            return; // Return so she doesn't wander while fighting
+        }
+
+        // Normal random wandering if no enemies are attacking her
         if (this.path.length === 0 && this.pathTimer <= 0 && Math.random() < 0.05) {
             if (pathfindsThisFrame < 2) {
                 pathfindsThisFrame++;
@@ -1301,15 +1325,34 @@ function triggerRaid() {
     toast('⚠️ Wave ' + state.wave + ': Army ants are charging your brood!');
 
     let antCount = Math.round(5 + Math.pow(state.wave, 1.8) * 2);
-    let queen = state.entities.find(e => e.type === 'queen');
-    let originGx = queen ? queen.gx : 0, originGy = queen ? queen.gy : SURFACE_Y;
 
     for (let i = 0; i < antCount; i++) {
         setTimeout(() => {
-            let angle = Math.random() * Math.PI * 2;
-            let dist = 24 + Math.random() * 10;
-            let startGx = originGx + Math.round(Math.cos(angle) * dist);
-            let startGy = Math.max(0, Math.min(SURFACE_Y - 2, originGy + Math.round(Math.sin(angle) * dist * 0.3) - 8));
+            // Spawn dynamically based on camera bounds so they are guaranteed OUT OF VIEW regardless of which ant you switch to
+            const camCenterGx = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
+            const camCenterGy = Math.floor((camera.y + (canvas.height / 2) / camera.zoom) / TILE_SIZE);
+            const viewTilesW = (canvas.width / camera.zoom) / TILE_SIZE;
+            const viewTilesH = (canvas.height / camera.zoom) / TILE_SIZE;
+            
+            let buffer = 25; // Distance outside the visible camera area
+            let startGx, startGy;
+            let side = Math.floor(Math.random() * 4);
+            if (side === 0) { 
+                startGx = camCenterGx - viewTilesW / 2 - buffer - Math.random() * 30;
+                startGy = camCenterGy + (Math.random() - 0.5) * viewTilesH;
+            } else if (side === 1) { 
+                startGx = camCenterGx + viewTilesW / 2 + buffer + Math.random() * 30;
+                startGy = camCenterGy + (Math.random() - 0.5) * viewTilesH;
+            } else if (side === 2) { 
+                startGx = camCenterGx + (Math.random() - 0.5) * viewTilesW;
+                startGy = camCenterGy - viewTilesH / 2 - buffer - Math.random() * 30;
+            } else { 
+                startGx = camCenterGx + (Math.random() - 0.5) * viewTilesW;
+                startGy = camCenterGy + viewTilesH / 2 + buffer + Math.random() * 30;
+            }
+            startGx = Math.round(startGx);
+            startGy = Math.round(startGy);
+            
             state.entities.push(new Ant('army_ant', startGx * TILE_SIZE + 20, startGy * TILE_SIZE + 20));
         }, i * 400);
     }
