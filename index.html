@@ -176,6 +176,7 @@ const CHUNK_SIZE = 16;
 const camera = { x: 0, y: 0, zoom: 1.2 };
 const keys = { w: false, a: false, s: false, d: false, arrowup: false, arrowdown: false, arrowleft: false, arrowright: false, ' ': false };
 let spacePressed = false;
+let pathfindsThisFrame = 0; // Global pathfinding quota to prevent lag
 
 window.addEventListener('keydown', e => {
     let k = e.key.toLowerCase();
@@ -199,17 +200,16 @@ function resize() { canvas.width = window.innerWidth; canvas.height = window.inn
 window.addEventListener('resize', resize);
 resize();
 
-// Fast squared distance helper (much faster than Math.hypot for frequent checks)
 function distSq(x1, y1, x2, y2) {
     return (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
 }
 
 /**
- * INFINITE WORLD (chunked, procedurally generated, sparse)
+ * INFINITE WORLD
  */
 const chunks = new Map(); 
 const decorations = new Map(); 
-const surfaceCache = new Map(); // Cache surface heights to prevent math lag
+const surfaceCache = new Map(); 
 
 function chunkKey(cx, cy) { return cx + ',' + cy; }
 
@@ -329,13 +329,13 @@ state.queenHungerDrain = 0.012;
 state.brood = [];
 
 const ASSETS = {
-    queen: { src: 'https://gnome-steader.github.io/Ant-game/queen.png', img: new Image(), loaded: false, fallback: '#9b59b6' },
-    minor: { src: 'https://gnome-steader.github.io/Ant-game/minor.png', img: new Image(), loaded: false, fallback: '#f1c40f' },
-    major: { src: 'https://gnome-steader.github.io/Ant-game/major.png', img: new Image(), loaded: false, fallback: '#e67e22' },
-    super_major: { src: 'https://gnome-steader.github.io/Ant-game/super-major.png', img: new Image(), loaded: false, fallback: '#c0392b' },
-    army_ant: { src: 'https://gnome-steader.github.io/Ant-game/army_ant.png', img: new Image(), loaded: false, fallback: '#ff0000' },
-    dirt_tile: { src: 'https://gnome-steader.github.io/Ant-game/dirt_tile.png', img: new Image(), loaded: false, fallback: '#5c4033' },
-    dirt_ball: { src: 'https://gnome-steader.github.io/Ant-game/dirt_ball.png', img: new Image(), loaded: false, fallback: '#8b5a2b' }
+    queen: { src: 'queen.png', img: new Image(), loaded: false, fallback: '#9b59b6' },
+    minor: { src: 'minor.png', img: new Image(), loaded: false, fallback: '#f1c40f' },
+    major: { src: 'major.png', img: new Image(), loaded: false, fallback: '#e67e22' },
+    super_major: { src: 'super-major.png', img: new Image(), loaded: false, fallback: '#c0392b' },
+    army_ant: { src: 'army_ant.png', img: new Image(), loaded: false, fallback: '#ff0000' },
+    dirt_tile: { src: 'dirt_tile.png', img: new Image(), loaded: false, fallback: '#5c4033' },
+    dirt_ball: { src: 'dirt_ball.png', img: new Image(), loaded: false, fallback: '#8b5a2b' }
 };
 Object.values(ASSETS).forEach(asset => {
     asset.img.src = asset.src;
@@ -375,8 +375,7 @@ class FloatingText {
 }
 function spawnParticles(x, y, color, count = 5, speed = 4, size = null, gravity = 0) {
     for (let i = 0; i < count; i++) state.particles.push(new Particle(x, y, color, speed, size, gravity));
-    // Prevent particle memory leak
-    if (state.particles.length > 400) state.particles.splice(0, state.particles.length - 400);
+    if (state.particles.length > 200) state.particles.splice(0, state.particles.length - 200);
 }
 function spawnText(x, y, text, color, size) { state.floatingTexts.push(new FloatingText(x, y, text, color, size)); }
 function triggerShake(intensity) { state.shake = Math.max(state.shake, intensity); }
@@ -445,7 +444,8 @@ function findPath(startX, startY, endX, endY, isEnemy = false, maxRadius = 40) {
     let closedSet = new Set();
     let iterations = 0;
 
-    while (openSet.length > 0 && iterations < 2500) {
+    // Reduced max iterations from 2500 to 400 to prevent massive lag spikes
+    while (openSet.length > 0 && iterations < 400) {
         iterations++;
         openSet.sort((a, b) => a.f - b.f);
         let current = openSet.shift();
@@ -559,7 +559,7 @@ class Ant {
         this.type = type; this.x = x; this.y = y;
         this.gx = Math.floor(x / TILE_SIZE); this.gy = Math.floor(y / TILE_SIZE);
         this.state = 'IDLE'; this.path = []; this.job = null;
-        this.pathTimer = 0; // Prevents A* lag spam
+        this.pathTimer = 0; 
 
         this.maxHp = STATS[type].hp; this.hp = this.maxHp;
         this.dmg = STATS[type].dmg; this.baseSpeed = STATS[type].speed; this.speed = this.baseSpeed;
@@ -628,7 +628,7 @@ class Ant {
             let target = this.path[0];
             let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
-            let dist = Math.hypot(dx, dy);
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
 
             if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
             else {
@@ -696,8 +696,11 @@ class Ant {
 
         if (chaseTarget) {
             if (this.path.length === 0 && this.pathTimer <= 0) {
-                this.path = findPath(this.gx, this.gy, chaseTarget.gx, chaseTarget.gy, true) || [];
-                this.pathTimer = 15 + Math.floor(Math.random() * 10);
+                if (pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, chaseTarget.gx, chaseTarget.gy, true) || [];
+                    this.pathTimer = 15 + Math.floor(Math.random() * 10);
+                }
             }
         }
 
@@ -705,7 +708,7 @@ class Ant {
             let t = this.path[0];
             let tx = t.x * TILE_SIZE + TILE_SIZE / 2, ty = t.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
-            let dist = Math.hypot(dx, dy);
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
             if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
             else {
                 this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed;
@@ -724,16 +727,19 @@ class Ant {
 
     updateQueenAI() {
         if (this.path.length === 0 && this.pathTimer <= 0 && Math.random() < 0.05) {
-            let nx = this.gx + Math.floor(Math.random() * 4) - 2;
-            let ny = this.gy + Math.floor(Math.random() * 4) - 2;
-            if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
-            this.pathTimer = 30;
+            if (pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
+                let nx = this.gx + Math.floor(Math.random() * 4) - 2;
+                let ny = this.gy + Math.floor(Math.random() * 4) - 2;
+                if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                this.pathTimer = 30;
+            }
         }
         if (this.path.length > 0) {
             let target = this.path[0];
             let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
-            let dist = Math.hypot(dx, dy);
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
             if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
             else { this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed; this.angle = Math.atan2(dy, dx); }
         }
@@ -900,14 +906,20 @@ class Ant {
             if (this.gy >= SURFACE_Y) {
                 let queen = state.entities.find(e => e.type === 'queen');
                 if (queen && this.pathTimer <= 0 && (this.path.length === 0 || Math.random() < 0.02)) {
-                    this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
-                    this.pathTimer = 30;
+                    if (pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                        this.pathTimer = 30;
+                    }
                 }
             } else if (this.path.length === 0 && this.pathTimer <= 0 && Math.random() < 0.05) {
-                let nx = this.gx + Math.floor(Math.random() * 10) - 5;
-                let ny = Math.max(0, Math.min(SURFACE_Y - 2, this.gy + Math.floor(Math.random() * 6) - 3));
-                if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
-                this.pathTimer = 30;
+                if (pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    let nx = this.gx + Math.floor(Math.random() * 10) - 5;
+                    let ny = Math.max(0, Math.min(SURFACE_Y - 2, this.gy + Math.floor(Math.random() * 6) - 3));
+                    if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                    this.pathTimer = 30;
+                }
             }
             return;
         }
@@ -922,7 +934,8 @@ class Ant {
                         if (this.job) { this.job.assigned = false; this.job = null; }
                         this.state = 'IDLE';
                     }
-                    if (this.pathTimer <= 0) {
+                    if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
                         this.path = findPath(this.gx, this.gy, distressAnt.gx, distressAnt.gy) || [];
                         this.pathTimer = 20;
                     }
@@ -949,8 +962,11 @@ class Ant {
                     if (!prey.id) prey.id = Math.random().toString(36).slice(2);
                     this.huntTargetId = prey.id;
                     this.state = 'HUNTING';
-                    this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
-                    this.pathTimer = 20;
+                    if (pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                        this.pathTimer = 20;
+                    }
                     return;
                 }
             }
@@ -967,7 +983,8 @@ class Ant {
             if (this.type === 'super_major' && workersAlive && this.pathTimer <= 0 && Math.random() < 0.05) {
                 let targetX = this.gx + Math.floor(Math.random() * 20) - 10;
                 let targetY = this.gy + Math.floor(Math.random() * 10) - 5;
-                if (!isWall(targetX, targetY)) {
+                if (!isWall(targetX, targetY) && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
                     this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
                     this.pathTimer = 40;
                 }
@@ -975,12 +992,14 @@ class Ant {
 
             if (!this.job && this.type !== 'super_major' && this.pathTimer <= 0) {
                 if (this.gy < SURFACE_Y) {
-                    if (Math.random() < 0.05) {
+                    if (Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
                         let queen = state.entities.find(e => e.type === 'queen');
                         if (queen) this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
                         this.pathTimer = 30;
                     }
-                } else if (Math.random() < 0.05) {
+                } else if (Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
                     let nx = this.gx + Math.floor(Math.random() * 5) - 2;
                     let ny = this.gy + Math.floor(Math.random() * 5) - 2;
                     if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
@@ -1003,13 +1022,14 @@ class Ant {
                     state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
                     this.state = 'IDLE'; this.huntTargetId = null;
                 }
-            } else if (this.pathTimer <= 0 && Math.random() < 0.2) {
+            } else if (this.pathTimer <= 0 && Math.random() < 0.2 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
                 this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
                 this.pathTimer = 15;
                 if (this.path.length === 0) { this.state = 'IDLE'; this.huntTargetId = null; }
             }
         } else if (this.state === 'MOVING_TO_JOB') {
-            if (Math.hypot(this.gx - this.job.x, this.gy - this.job.y) <= 1) {
+            if (Math.sqrt(distSq(this.gx, this.gy, this.job.x, this.job.y)) <= 1) {
                 if (this.job.type === 'DIG') { this.state = 'DIGGING'; this.digTimer = 20; }
                 else if (this.job.type === 'HARVEST') { this.state = 'HARVESTING'; this.digTimer = 10; }
                 else if (this.job.type === 'FEED_LARVA') { this.state = 'FEEDING_LARVA'; this.digTimer = 15; }
@@ -1025,12 +1045,16 @@ class Ant {
                 state.jobs = state.jobs.filter(j => j !== this.job);
                 this.job = null; this.state = 'CARRYING_DIRT';
                 let queen = state.entities.find(e => e.type === 'queen');
-                this.path = queen ? (findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || []) : [];
+                if (queen && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || [];
+                } else { this.path = []; }
             }
         } else if (this.state === 'CARRYING_DIRT') {
             if (this.gy < SURFACE_Y) {
                 this.state = 'IDLE'; spawnParticles(this.x, this.y, '#8b5a2b', 8);
-            } else if (this.path.length === 0 && this.pathTimer <= 0) {
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
                 let queen = state.entities.find(e => e.type === 'queen');
                 this.path = queen ? (findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || []) : [];
                 this.pathTimer = 30;
@@ -1046,7 +1070,10 @@ class Ant {
                 spawnParticles(this.x, this.y, this.carriedResource === 'seed' ? '#f1c40f' : '#e74c3c', 10);
                 this.job = null; this.state = 'CARRYING_RESOURCE';
                 let queen = state.entities.find(e => e.type === 'queen');
-                if (queen) this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                if (queen && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                }
             }
         } else if (this.state === 'FEEDING_LARVA') {
             this.digTimer--;
@@ -1071,7 +1098,8 @@ class Ant {
                 if (this.carriedResource === 'meat') { state.resources.meat++; spawnText(this.x, this.y - 20, "+1 Meat", "#e74c3c"); }
                 updateUI();
                 this.carriedResource = null; this.state = 'IDLE';
-            } else if (this.path.length === 0 && this.pathTimer <= 0) {
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
                 this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
                 this.pathTimer = 30;
             }
@@ -1081,7 +1109,7 @@ class Ant {
     }
 
     assignJob(job) {
-        if (this.pathTimer > 0) return; // Wait before spamming A*
+        if (this.pathTimer > 0 || pathfindsThisFrame >= 2) return; 
         
         job.assigned = true; this.job = job;
         let targetX = job.x, targetY = job.y;
@@ -1093,13 +1121,13 @@ class Ant {
             if (adj) { targetX = adj.x; targetY = adj.y; }
         }
         
+        pathfindsThisFrame++;
         this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
-        this.pathTimer = 15; // Cooldown for pathfinding
+        this.pathTimer = 15; 
         
         if (this.path.length > 0 || (this.gx === targetX && this.gy === targetY)) {
             this.state = 'MOVING_TO_JOB';
         } else {
-            // Unreachable job - fail it and eventually delete it to prevent lag
             job.assigned = false; 
             this.job = null;
             job.failCount = (job.failCount || 0) + 1;
@@ -1434,6 +1462,7 @@ function updateCompass() {
  */
 function update() {
     state.time += 0.05;
+    pathfindsThisFrame = 0; // Reset pathfinding quota every frame
 
     if (state.controlledAnt) {
         let targetCamX = state.controlledAnt.x - (canvas.width / 2) / camera.zoom;
@@ -1448,6 +1477,23 @@ function update() {
         if (keys.d) camera.x += camSpeed;
     }
 
+    // Pre-generate chunks for the visible area during update so draw() doesn't stutter
+    const gxMin = Math.floor((camera.x - TILE_SIZE*3) / TILE_SIZE);
+    const gxMax = Math.ceil((camera.x + canvas.width / camera.zoom + TILE_SIZE*3) / TILE_SIZE);
+    const gyMin = Math.floor((camera.y - TILE_SIZE*3) / TILE_SIZE);
+    const gyMax = Math.ceil((camera.y + canvas.height / camera.zoom + TILE_SIZE*3) / TILE_SIZE);
+    
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE);
+    const cxMax = Math.floor(gxMax / CHUNK_SIZE);
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE);
+    const cyMax = Math.floor(gyMax / CHUNK_SIZE);
+    
+    for (let ccy = cyMin; ccy <= cyMax; ccy++) {
+        for (let ccx = cxMin; ccx <= cxMax; ccx++) {
+            ensureChunk(ccx, ccy);
+        }
+    }
+
     state.entities.forEach(ant => ant.update());
     state.entities = state.entities.filter(ant => {
         if (ant.hp <= 0) {
@@ -1456,7 +1502,7 @@ function update() {
             triggerShake(ant.type === 'queen' ? 15 : 4);
             
             state.splats.push({ x: ant.x, y: ant.y, size: Math.random() * 15 + 10 });
-            if (state.splats.length > 100) state.splats.shift(); // Prevent splat memory leak
+            if (state.splats.length > 50) state.splats.shift(); // Prevent splat memory leak
 
             if (ant.carriedBrood) { ant.carriedBrood.carriedBy = null; ant.carriedBrood.x = ant.gx; ant.carriedBrood.y = ant.gy; }
             if (ant.carriedResource) state.surfaceItems.push({ type: ant.carriedResource, x: ant.gx, y: ant.gy });
@@ -1516,22 +1562,36 @@ function draw() {
 
     let dx = (Math.random() - 0.5) * state.shake;
     let dy = (Math.random() - 0.5) * state.shake;
-    ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy);
+    
+    // Rounding camera to prevent sub-pixel blurring and edge jitter
+    let camX = Math.round(camera.x);
+    let camY = Math.round(camera.y);
+    
+    ctx.translate(Math.floor(canvas.width / 2 + dx), Math.floor(canvas.height / 2 + dy));
     ctx.scale(camera.zoom, camera.zoom);
-    ctx.translate(-canvas.width / 2 - camera.x, -canvas.height / 2 - camera.y);
+    ctx.translate(-Math.floor(canvas.width / 2 + camX), -Math.floor(canvas.height / 2 + camY));
 
-    const viewLeft = camera.x - 4, viewRight = camera.x + canvas.width / camera.zoom + 4;
-    const viewTop = camera.y - 4, viewBottom = camera.y + canvas.height / camera.zoom + 4;
-    const gxMin = Math.floor(viewLeft / TILE_SIZE), gxMax = Math.ceil(viewRight / TILE_SIZE);
-    const gyMin = Math.floor(viewTop / TILE_SIZE), gyMax = Math.ceil(viewBottom / TILE_SIZE);
+    // Massive padding (3 full tiles) to completely eliminate edge glitching
+    const viewLeft = camera.x - TILE_SIZE * 3;
+    const viewRight = camera.x + canvas.width / camera.zoom + TILE_SIZE * 3;
+    const viewTop = camera.y - TILE_SIZE * 3;
+    const viewBottom = camera.y + canvas.height / camera.zoom + TILE_SIZE * 3;
+    
+    const gxMin = Math.floor(viewLeft / TILE_SIZE);
+    const gxMax = Math.ceil(viewRight / TILE_SIZE);
+    const gyMin = Math.floor(viewTop / TILE_SIZE);
+    const gyMax = Math.ceil(viewBottom / TILE_SIZE);
 
-    let skyGrad = ctx.createLinearGradient(0, gyMin * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE + 40);
+    // Fixed sky gradient so it doesn't jitter when the camera moves
+    let skyGrad = ctx.createLinearGradient(0, (SURFACE_Y - 15) * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE);
     skyGrad.addColorStop(0, '#B8CB5A');
     skyGrad.addColorStop(1, '#8fa63e');
     ctx.fillStyle = skyGrad;
-    ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE + 40 - gyMin * TILE_SIZE));
+    // +1 to width ensures no 1-pixel gaps from float math
+    ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE - gyMin * TILE_SIZE));
+    
     ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(gxMin * TILE_SIZE, SURFACE_Y * TILE_SIZE, (gxMax - gxMin) * TILE_SIZE, (gyMax - gyMin) * TILE_SIZE);
+    ctx.fillRect(gxMin * TILE_SIZE, Math.max(gyMin, SURFACE_Y) * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, (gyMax - gyMin + 1) * TILE_SIZE);
 
     for (let gy = gyMin; gy <= gyMax; gy++) {
         for (let gx = gxMin; gx <= gxMax; gx++) {
@@ -1553,29 +1613,43 @@ function draw() {
         }
     }
 
-    const cxMin = Math.floor(gxMin / CHUNK_SIZE) - 1, cxMax = Math.floor(gxMax / CHUNK_SIZE) + 1;
-    const cyMin = Math.floor(gyMin / CHUNK_SIZE) - 1, cyMax = Math.floor(gyMax / CHUNK_SIZE) + 1;
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE);
+    const cxMax = Math.floor(gxMax / CHUNK_SIZE);
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE);
+    const cyMax = Math.floor(gyMax / CHUNK_SIZE);
+    
     for (let ccy = cyMin; ccy <= cyMax; ccy++) {
         for (let ccx = cxMin; ccx <= cxMax; ccx++) {
-            ensureChunk(ccx, ccy);
             const decos = decorations.get(chunkKey(ccx, ccy));
             if (!decos) continue;
             for (const d of decos) {
-                if (d.x < gxMin - 1 || d.x > gxMax + 1 || d.y < gyMin - 1 || d.y > gyMax + 1) continue;
+                if (d.x < gxMin || d.x > gxMax || d.y < gyMin || d.y > gyMax) continue;
                 drawDecoration(d);
             }
         }
     }
 
+    // Off-screen culling function to save CPU
+    function inView(x, y) {
+        return x >= viewLeft && x <= viewRight && y >= viewTop && y <= viewBottom;
+    }
+
     ctx.fillStyle = 'rgba(150, 0, 0, 0.6)';
-    state.splats.forEach(s => { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill(); });
+    state.splats.forEach(s => { 
+        if (inView(s.x, s.y)) { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill(); }
+    });
 
     ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
-    state.jobs.forEach(job => { if (job.type === 'DIG') ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); });
+    state.jobs.forEach(job => { 
+        if (job.type === 'DIG' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+    });
     ctx.fillStyle = 'rgba(46, 204, 113, 0.25)';
-    state.jobs.forEach(job => { if (job.type === 'FEED_LARVA') ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); });
+    state.jobs.forEach(job => { 
+        if (job.type === 'FEED_LARVA' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+    });
 
     state.pheromones.forEach(p => {
+        if (!inView(p.x, p.y)) return;
         let age = state.time - p.birthTime;
         let alpha = Math.max(0, 1 - (age / 500)) * 0.6;
         ctx.globalAlpha = alpha;
@@ -1586,15 +1660,19 @@ function draw() {
 
     let pulse = Math.abs(Math.sin(state.time)) * 5;
     state.surfaceItems.forEach(item => {
+        let ix = item.x * TILE_SIZE + TILE_SIZE / 2;
+        let iy = item.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(ix, iy)) return;
         ctx.fillStyle = item.type === 'seed' ? `rgba(241, 196, 15, 0.3)` : `rgba(231, 76, 60, 0.3)`;
-        ctx.beginPath(); ctx.arc(item.x * TILE_SIZE + TILE_SIZE / 2, item.y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 2 + pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE / 2 + pulse, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = item.type === 'seed' ? '#f1c40f' : '#e74c3c';
-        ctx.beginPath(); ctx.arc(item.x * TILE_SIZE + TILE_SIZE / 2, item.y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE / 3, 0, Math.PI * 2); ctx.fill();
     });
 
     state.brood.forEach(b => {
         if (b.carriedBy) return;
         let bx = b.x * TILE_SIZE + TILE_SIZE / 2, by = b.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(bx, by)) return;
         if (b.needsFood && !b.fed) {
             ctx.globalAlpha = 0.3 + Math.abs(Math.sin(state.time * 3)) * 0.3;
             ctx.fillStyle = '#f39c12';
@@ -1604,10 +1682,10 @@ function draw() {
         drawBroodShape(bx, by, b.stage);
     });
 
-    state.flies.forEach(f => f.draw());
-    state.entities.forEach(ant => ant.draw());
-    state.particles.forEach(p => p.draw());
-    state.floatingTexts.forEach(t => t.draw());
+    state.flies.forEach(f => { if (inView(f.x, f.y)) f.draw(); });
+    state.entities.forEach(ant => { if (inView(ant.x, ant.y)) ant.draw(); });
+    state.particles.forEach(p => { if (inView(p.x, p.y)) p.draw(); });
+    state.floatingTexts.forEach(t => { if (inView(t.x, t.y)) t.draw(); });
 
     ctx.restore();
 }
