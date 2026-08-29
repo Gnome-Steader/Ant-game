@@ -32,7 +32,7 @@
         .res-brood { color: #7fd3ff; text-shadow: 0 0 5px rgba(127, 211, 255, 0.5); font-size: 14px; font-weight: normal; }
 
         #raid-warning {
-            color: #ff3333; font-weight: 900; font-size: 22px; letter-spacing: 2px;
+            color: #ff3333; font-weight: 900; font-size: 20px; letter-spacing: 1.5px;
             animation: pulse-red 0.5s infinite alternate; display: none;
         }
 
@@ -62,14 +62,16 @@
         .tool-attack.active { border-color: #e74c3c; box-shadow: 0 0 10px #e74c3c; }
         .cost { display: block; font-size: 11px; color: #aaa; margin-top: 4px; font-weight: normal; }
 
+        /* Non-blocking corner badge for Super Major plug-mode -- never covers the viewport or eats input */
         #context-menu {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            display: none; flex-direction: column; align-items: center; border-radius: 8px;
-            gap: 8px;
+            position: absolute; top: 84px; right: 16px;
+            display: none; flex-direction: column; align-items: stretch; border-radius: 8px;
+            gap: 6px; width: 210px; pointer-events: auto;
         }
-        #plug-btn { background: #880000; border-color: #ff4444; font-size: 16px; padding: 12px 24px; }
+        #context-menu h3 { color: #3498db; font-size: 13px; }
+        #plug-btn { background: #880000; border-color: #ff4444; font-size: 13px; padding: 8px 14px; }
         #plug-btn:hover { background: #aa0000; box-shadow: 0 0 15px #ff0000; }
-        #release-btn { background: #333; border-color: #888; font-size: 13px; padding: 8px 18px; }
+        #release-btn { background: #333; border-color: #888; font-size: 12px; padding: 6px 14px; }
 
         #controls-hint {
             position: absolute; bottom: 96px; left: 20px; color: #ccc; font-size: 14px; pointer-events: none;
@@ -83,6 +85,12 @@
             background: rgba(0,0,0,0.8); border: 1px solid #f1c40f; color: #f1c40f;
             padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: bold;
             display: none; pointer-events: none; white-space: nowrap;
+        }
+
+        #compass {
+            position: absolute; top: 84px; left: 16px; pointer-events: none;
+            background: rgba(0,0,0,0.7); border: 1px solid #444; border-radius: 6px;
+            padding: 6px 10px; font-size: 12px; color: #ccc;
         }
 
         #toast-wrap {
@@ -105,10 +113,11 @@
     <div id="controls-hint">
         📷 <span class="highlight">WASD</span> to Pan Camera | Scroll to Zoom<br>
         🐜 <span class="highlight">Click an Ant</span> (or the Queen) to take Direct Control<br>
-        🎮 <span class="highlight">Arrow Keys</span> to Move | <span class="highlight">Spacebar</span> to Attack/Pick Up/Drop/Wall/Feed
+        🎮 <span class="highlight">Arrow Keys</span> to Move | <span class="highlight">Spacebar</span> to Attack/Hunt/Pick Up/Drop/Wall/Feed
     </div>
 
     <div id="action-prompt"></div>
+    <div id="compass"></div>
 
     <div id="ui-layer">
         <div id="top-hud" class="hud-panel">
@@ -128,7 +137,7 @@
         <div id="toast-wrap"></div>
 
         <div id="context-menu" class="hud-panel">
-            <h3 style="color: #3498db;">Super Major Selected</h3>
+            <h3>Super Major Selected</h3>
             <button id="plug-btn">Toggle Plug Mode (Defend)</button>
             <button id="release-btn">Release Control</button>
         </div>
@@ -140,9 +149,9 @@
                 <button class="tool-btn tool-attack" id="tool-attack" onclick="setTool('attack')">🔴 Attack Pheromone</button>
             </div>
             <div class="spawn-group">
-                <button id="spawn-minor">Spawn Minor<span class="cost">2 Seeds</span></button>
-                <button id="spawn-major">Spawn Major<span class="cost">3 Seeds, 1 Meat</span></button>
-                <button id="spawn-super">Spawn Super Major<span class="cost">4 Seeds, 2 Meat</span></button>
+                <button id="spawn-minor">Spawn Minor (Egg)<span class="cost">2 Seeds</span></button>
+                <button id="spawn-major">Spawn Major (Egg)<span class="cost">3 Seeds, 1 Meat</span></button>
+                <button id="spawn-super">Spawn Super Major (Egg)<span class="cost">4 Seeds, 2 Meat</span></button>
             </div>
         </div>
     </div>
@@ -155,9 +164,8 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const TILE_SIZE = 40;
-const COLS = 60;
-const ROWS = 60;
-const SURFACE_Y = 15;
+const SURFACE_Y = 15;          // y=0 is the world's fixed "ground level" datum ants are born near
+const CHUNK_SIZE = 16;         // tiles per chunk edge
 
 const camera = { x: 0, y: 0, zoom: 1.2 };
 const keys = { w: false, a: false, s: false, d: false, arrowup: false, arrowdown: false, arrowleft: false, arrowright: false, ' ': false };
@@ -178,24 +186,136 @@ window.addEventListener('keyup', e => {
 });
 canvas.addEventListener('wheel', e => {
     camera.zoom -= e.deltaY * 0.001;
-    camera.zoom = Math.max(0.5, Math.min(camera.zoom, 3.0));
+    camera.zoom = Math.max(0.4, Math.min(camera.zoom, 3.0));
 });
 
 function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 window.addEventListener('resize', resize);
 resize();
 
-// Game State
+/**
+ * INFINITE WORLD (chunked, procedurally generated, sparse)
+ * Tile values: 0 = open air/tunnel, 1 = dirt/wall, 2 = rock (indestructible)
+ */
+const chunks = new Map(); // key "cx,cy" -> Uint8Array(CHUNK_SIZE*CHUNK_SIZE)
+const decorations = new Map(); // key "cx,cy" -> array of {type,x,y,...} in world tile coords, surface only
+
+function chunkKey(cx, cy) { return cx + ',' + cy; }
+
+// Deterministic hash-based pseudo-random per tile/chunk (so regenerating a chunk is stable)
+function hash2(x, y) {
+    let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+    return h - Math.floor(h);
+}
+
+function surfaceHeightAt(gx) {
+    // Gently undulating surface line so it doesn't feel like a flat slab forever
+    return SURFACE_Y + Math.round(Math.sin(gx * 0.07) * 2 + Math.sin(gx * 0.021) * 3);
+}
+
+function generateChunk(cx, cy) {
+    const data = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const baseX = cx * CHUNK_SIZE, baseY = cy * CHUNK_SIZE;
+    const decos = [];
+
+    for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+            const gx = baseX + lx, gy = baseY + ly;
+            const surf = surfaceHeightAt(gx);
+            let val = (gy < surf) ? 0 : 1;
+
+            if (val === 1) {
+                // Scatter indestructible rocks underground
+                if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2;
+                // Carve occasional natural dirt-bank pockets (small open caverns) that read as
+                // "new spots to dig a nest" a bit away from the surface
+                const cavernNoise = hash2(gx * 0.09 + 50, gy * 0.09 + 50);
+                if (gy > surf + 4 && cavernNoise > 0.965) {
+                    val = 0;
+                }
+            }
+            data[ly * CHUNK_SIZE + lx] = val;
+        }
+    }
+
+    // Decorations: rocks/pebbles/grass tufts on the surface strip, plus occasional visible dirt-bank
+    // faces (exposed vertical faces the player can spot and dig into for a "new nest site")
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const gx = baseX + lx;
+        const surf = surfaceHeightAt(gx);
+        if (surf >= baseY && surf < baseY + CHUNK_SIZE) {
+            const r = hash2(gx * 5.3, 91.1);
+            if (r > 0.82) decos.push({ type: 'grass', x: gx, y: surf - 1 });
+            else if (r > 0.74) decos.push({ type: 'pebble', x: gx, y: surf - 1 });
+            else if (r > 0.71) decos.push({ type: 'mushroom', x: gx, y: surf - 1 });
+        }
+        // Dirt-bank marker: a distinctive outcrop a short walk from spawn, flagged for the minimap/visuals
+        if (hash2(gx * 1.7 + 200, cy * 3.3 + 200) > 0.992) {
+            decos.push({ type: 'bank_marker', x: gx, y: surfaceHeightAt(gx) });
+        }
+    }
+    // A few big background rocks scattered underground for atmosphere (visual only, drawn behind dirt)
+    for (let i = 0; i < 3; i++) {
+        const lx = Math.floor(hash2(cx * 13 + i, cy * 17 + i) * CHUNK_SIZE);
+        const ly = Math.floor(hash2(cx * 19 + i, cy * 23 + i) * CHUNK_SIZE);
+        const gx = baseX + lx, gy = baseY + ly;
+        if (gy > surfaceHeightAt(gx) + 2) decos.push({ type: 'bg_rock', x: gx, y: gy });
+    }
+
+    chunks.set(chunkKey(cx, cy), data);
+    decorations.set(chunkKey(cx, cy), decos);
+}
+
+function ensureChunk(cx, cy) {
+    const key = chunkKey(cx, cy);
+    if (!chunks.has(key)) generateChunk(cx, cy);
+    return chunks.get(key);
+}
+
+function getTile(gx, gy) {
+    const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
+    const data = ensureChunk(cx, cy);
+    const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const ly = ((gy % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    return data[ly * CHUNK_SIZE + lx];
+}
+
+function setTile(gx, gy, val) {
+    const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
+    const data = ensureChunk(cx, cy);
+    const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const ly = ((gy % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    data[ly * CHUNK_SIZE + lx] = val;
+}
+
+function isWall(gx, gy) { return getTile(gx, gy) !== 0; }
+function isRock(gx, gy) { return getTile(gx, gy) === 2; }
+
+function initMap() {
+    const centerX = 0;
+    // Carve the starting nest around world origin
+    for (let y = SURFACE_Y - 1; y < SURFACE_Y + 5; y++) setTile(centerX, y, 0);
+    for (let cy = SURFACE_Y + 5; cy <= SURFACE_Y + 7; cy++) {
+        for (let cx = centerX - 3; cx <= centerX + 3; cx++) setTile(cx, cy, 0);
+    }
+    camera.x = (centerX * TILE_SIZE) - (canvas.width / 2) / camera.zoom;
+    camera.y = ((SURFACE_Y + 5) * TILE_SIZE) - (canvas.height / 2) / camera.zoom;
+}
+
+/**
+ * GAME STATE
+ */
 const state = {
     resources: { seeds: 15, meat: 5 },
-    grid: [], entities: [], jobs: [], surfaceItems: [], pheromones: [],
+    entities: [], jobs: [], surfaceItems: [], pheromones: [],
     particles: [], floatingTexts: [], splats: [], flies: [],
     controlledAnt: null, raidTimer: 1800, isRaidActive: false, wave: 1,
     activeTool: 'pointer', isDrawing: false, shake: 0, time: 0,
-    postBattleTimer: 0, seedRespawnTimer: 900, // 15s at 60fps
-    queenHunger: 100, queenHungerDrain: 0.012,
-    nextEggTimer: 600
+    postBattleTimer: 0, seedRespawnTimer: 900,
+    queenHunger: 100, nextEggTimer: 600
 };
+state.queenHungerDrain = 0.012;
+state.brood = [];
 
 // Asset Registry
 const ASSETS = {
@@ -207,26 +327,11 @@ const ASSETS = {
     dirt_tile: { src: 'https://gnome-steader.github.io/Ant-game/dirt_tile.png', img: new Image(), loaded: false, fallback: '#5c4033' },
     dirt_ball: { src: 'https://gnome-steader.github.io/Ant-game/dirt_ball.png', img: new Image(), loaded: false, fallback: '#8b5a2b' }
 };
-
 Object.values(ASSETS).forEach(asset => {
     asset.img.src = asset.src;
     asset.img.onload = () => asset.loaded = true;
     asset.img.onerror = () => asset.loaded = false;
 });
-
-function initMap() {
-    let centerX = Math.floor(COLS / 2);
-    for (let y = 0; y < ROWS; y++) {
-        state.grid[y] = [];
-        for (let x = 0; x < COLS; x++) state.grid[y][x] = (y < SURFACE_Y) ? 0 : 1;
-    }
-    for (let y = SURFACE_Y - 1; y < SURFACE_Y + 5; y++) state.grid[y][centerX] = 0;
-    for (let cy = SURFACE_Y + 5; cy <= SURFACE_Y + 7; cy++) {
-        for (let cx = centerX - 3; cx <= centerX + 3; cx++) state.grid[cy][cx] = 0;
-    }
-    camera.x = (centerX * TILE_SIZE) - (canvas.width / 2) / camera.zoom;
-    camera.y = ((SURFACE_Y + 5) * TILE_SIZE) - (canvas.height / 2) / camera.zoom;
-}
 
 /**
  * GAME JUICE
@@ -242,11 +347,10 @@ class Particle {
     update() { this.x += this.vx; this.y += this.vy; this.vy += this.gravity; this.life -= this.decay; }
     draw() {
         ctx.globalAlpha = Math.max(0, this.life);
-        ctx.fillStyle = this.color; ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+        ctx.fillStyle = this.color; ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
         ctx.globalAlpha = 1.0;
     }
 }
-
 class FloatingText {
     constructor(x, y, text, color, size = 18) {
         this.x = x; this.y = y; this.text = text; this.color = color;
@@ -262,7 +366,6 @@ class FloatingText {
         ctx.globalAlpha = 1.0;
     }
 }
-
 function spawnParticles(x, y, color, count = 5, speed = 4, size = null, gravity = 0) {
     for (let i = 0; i < count; i++) state.particles.push(new Particle(x, y, color, speed, size, gravity));
 }
@@ -279,83 +382,63 @@ function toast(msg) {
 /**
  * PHYSICS & COLLISION
  */
-function isWall(gx, gy) {
-    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return true;
-    return state.grid[gy][gx] === 1;
-}
-
 function resolveCollision(entity) {
     const radius = TILE_SIZE * 0.35;
-    const left = entity.x - radius;
-    const right = entity.x + radius;
-    const top = entity.y - radius;
-    const bottom = entity.y + radius;
+    const left = entity.x - radius, right = entity.x + radius;
+    const top = entity.y - radius, bottom = entity.y + radius;
 
-    const minGx = Math.floor(left / TILE_SIZE);
-    const maxGx = Math.floor(right / TILE_SIZE);
-    const minGy = Math.floor(top / TILE_SIZE);
-    const maxGy = Math.floor(bottom / TILE_SIZE);
+    const minGx = Math.floor(left / TILE_SIZE), maxGx = Math.floor(right / TILE_SIZE);
+    const minGy = Math.floor(top / TILE_SIZE), maxGy = Math.floor(bottom / TILE_SIZE);
 
     for (let gy = minGy; gy <= maxGy; gy++) {
         for (let gx = minGx; gx <= maxGx; gx++) {
             if (!isWall(gx, gy)) continue;
 
-            const tileLeft = gx * TILE_SIZE;
-            const tileRight = tileLeft + TILE_SIZE;
-            const tileTop = gy * TILE_SIZE;
-            const tileBottom = tileTop + TILE_SIZE;
+            const tileLeft = gx * TILE_SIZE, tileRight = tileLeft + TILE_SIZE;
+            const tileTop = gy * TILE_SIZE, tileBottom = tileTop + TILE_SIZE;
 
             const closestX = Math.max(tileLeft, Math.min(entity.x, tileRight));
             const closestY = Math.max(tileTop, Math.min(entity.y, tileBottom));
 
-            const dx = entity.x - closestX;
-            const dy = entity.y - closestY;
+            const dx = entity.x - closestX, dy = entity.y - closestY;
             const distSq = dx * dx + dy * dy;
 
             if (distSq < radius * radius && distSq > 0.0001) {
                 const dist = Math.sqrt(distSq);
                 const overlap = radius - dist;
-                const nx = dx / dist;
-                const ny = dy / dist;
-                entity.x += nx * overlap;
-                entity.y += ny * overlap;
+                entity.x += (dx / dist) * overlap;
+                entity.y += (dy / dist) * overlap;
             } else if (distSq <= 0.0001) {
-                const centerX = tileLeft + TILE_SIZE / 2;
-                const centerY = tileTop + TILE_SIZE / 2;
-                const pushDx = entity.x - centerX;
-                const pushDy = entity.y - centerY;
+                const centerX = tileLeft + TILE_SIZE / 2, centerY = tileTop + TILE_SIZE / 2;
+                const pushDx = entity.x - centerX, pushDy = entity.y - centerY;
                 const pushDist = Math.hypot(pushDx, pushDy) || 1;
                 entity.x += (pushDx / pushDist) * (radius + 1);
                 entity.y += (pushDy / pushDist) * (radius + 1);
             }
         }
     }
-    // Clamp to world bounds so entities can never escape the grid entirely
-    const margin = radius + 1;
-    entity.x = Math.max(margin, Math.min(COLS * TILE_SIZE - margin, entity.x));
-    entity.y = Math.max(margin, Math.min(ROWS * TILE_SIZE - margin, entity.y));
 }
 
 function lineCrossesWall(x1, y1, x2, y2) {
     const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (TILE_SIZE * 0.5)));
     for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        const cx = x1 + (x2 - x1) * t;
-        const cy = y1 + (y2 - y1) * t;
+        const cx = x1 + (x2 - x1) * t, cy = y1 + (y2 - y1) * t;
         if (isWall(Math.floor(cx / TILE_SIZE), Math.floor(cy / TILE_SIZE))) return true;
     }
     return false;
 }
 
 /**
- * PATHFINDING (A*)
+ * PATHFINDING (A*) — bounded search radius so it stays fast in an infinite world
  */
 function heuristic(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
-function findPath(startX, startY, endX, endY, isEnemy = false) {
+function findPath(startX, startY, endX, endY, isEnemy = false, maxRadius = 40) {
     if (startX === endX && startY === endY) return [];
     if (isWall(endX, endY)) return null;
+    if (heuristic({ x: startX, y: startY }, { x: endX, y: endY }) > maxRadius * 2) return null;
 
-    let openSet = [{ x: startX, y: startY, g: 0, f: heuristic({x: startX, y: startY}, {x: endX, y: endY}), parent: null }];
+    let openSet = [{ x: startX, y: startY, g: 0, f: heuristic({ x: startX, y: startY }, { x: endX, y: endY }), parent: null }];
     let closedSet = new Set();
     let iterations = 0;
 
@@ -370,6 +453,7 @@ function findPath(startX, startY, endX, endY, isEnemy = false) {
             return path.reverse();
         }
         closedSet.add(`${current.x},${current.y}`);
+        if (Math.abs(current.x - startX) > maxRadius || Math.abs(current.y - startY) > maxRadius) continue;
 
         let neighbors = [
             { x: current.x, y: current.y - 1 }, { x: current.x, y: current.y + 1 },
@@ -377,15 +461,14 @@ function findPath(startX, startY, endX, endY, isEnemy = false) {
         ];
 
         for (let n of neighbors) {
-            if (n.x < 0 || n.x >= COLS || n.y < 0 || n.y >= ROWS) continue;
-            if (state.grid[n.y][n.x] === 1) continue;
+            if (isWall(n.x, n.y)) continue;
             if (closedSet.has(`${n.x},${n.y}`)) continue;
             if (isEnemy && state.entities.some(e => e.type === 'super_major' && e.state === 'DEFENDING' && e.gx === n.x && e.gy === n.y)) continue;
 
             let gScore = current.g + 1;
             let existing = openSet.find(o => o.x === n.x && o.y === n.y);
-            if (!existing) openSet.push({ x: n.x, y: n.y, g: gScore, f: gScore + heuristic(n, {x: endX, y: endY}), parent: current });
-            else if (gScore < existing.g) { existing.g = gScore; existing.f = gScore + heuristic(n, {x: endX, y: endY}); existing.parent = current; }
+            if (!existing) openSet.push({ x: n.x, y: n.y, g: gScore, f: gScore + heuristic(n, { x: endX, y: endY }), parent: current });
+            else if (gScore < existing.g) { existing.g = gScore; existing.f = gScore + heuristic(n, { x: endX, y: endY }); existing.parent = current; }
         }
     }
     return null;
@@ -402,22 +485,19 @@ const STATS = {
     army_ant: { hp: 25, dmg: 5, speed: 2.5 }
 };
 
-// A brood item occupies a tile like dirt/food but ages through its lifecycle.
-// Stored in state.surfaceItems style array: state.brood
-function makeBrood(x, y) {
-    return {
-        kind: 'brood', stage: 'egg', // egg -> larva -> pupa -> (hatch)
-        x, y, // grid coords when placed; if carried, tracked by carrier instead
-        timer: EGG_TIME, needsFood: false, fed: false, carriedBy: null,
-        id: Math.random().toString(36).slice(2)
-    };
-}
 const EGG_TIME = 1200;   // 20s
 const LARVA_TIME = 1800; // 30s (feeding required partway through)
 const PUPA_TIME = 1200;  // 20s
-state.brood = [];
 
-// Prey bugs on the surface — must be hunted for meat, they flee and fight back a little
+function makeBrood(x, y, willHatchAs = 'minor') {
+    return {
+        kind: 'brood', stage: 'egg', x, y,
+        timer: EGG_TIME, needsFood: false, fed: false, carriedBy: null,
+        willHatchAs, id: Math.random().toString(36).slice(2)
+    };
+}
+
+// Prey bugs — must be hunted for meat, flee when threatened
 class Prey {
     constructor(x, y) {
         this.x = x; this.y = y;
@@ -429,13 +509,13 @@ class Prey {
     }
     update() {
         if (this.flash > 0) this.flash--;
-        // Flee from nearby ants
         let threat = state.entities.find(e => e.type !== 'army_ant' && e.type !== 'queen' && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 2.5);
         if (threat) {
             this.fleeing = true;
             let angle = Math.atan2(this.y - threat.y, this.x - threat.x);
-            this.x += Math.cos(angle) * this.speed * 1.6;
-            this.y += Math.sin(angle) * this.speed * 1.6;
+            let nx = this.x + Math.cos(angle) * this.speed * 1.6;
+            let ny = this.y + Math.sin(angle) * this.speed * 1.6;
+            if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) { this.x = nx; this.y = ny; }
         } else {
             this.fleeing = false;
             this.wanderTimer--;
@@ -444,33 +524,37 @@ class Prey {
                 let angle = Math.random() * Math.PI * 2;
                 this.dir = { x: Math.cos(angle), y: Math.sin(angle) };
             }
-            this.x += this.dir.x * this.speed * 0.4;
-            this.y += this.dir.y * this.speed * 0.4;
+            let nx = this.x + this.dir.x * this.speed * 0.4;
+            let ny = this.y + this.dir.y * this.speed * 0.4;
+            if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) { this.x = nx; this.y = ny; }
         }
-        // Keep on surface, in bounds
-        this.x = Math.max(TILE_SIZE, Math.min((COLS - 1) * TILE_SIZE, this.x));
-        this.y = Math.max(TILE_SIZE, Math.min((SURFACE_Y - 1) * TILE_SIZE, this.y));
+        let surf = surfaceHeightAt(Math.floor(this.x / TILE_SIZE));
+        this.y = Math.max((surf - 6) * TILE_SIZE, Math.min((surf - 1) * TILE_SIZE, this.y));
     }
     draw() {
         ctx.save();
         ctx.translate(this.x, this.y);
         if (this.flash > 0) ctx.fillStyle = '#ff6666'; else ctx.fillStyle = '#4a3728';
-        ctx.beginPath(); ctx.ellipse(0, 0, this.size/2, this.size/3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(0, 0, this.size / 2, this.size / 3, 0, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#2e2115';
-        ctx.beginPath(); ctx.ellipse(-this.size/3, 0, this.size/4, this.size/5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(-this.size / 3, 0, this.size / 4, this.size / 5, 0, 0, Math.PI * 2); ctx.fill();
         if (this.hp < this.maxHp) {
-            ctx.fillStyle = '#f00'; ctx.fillRect(-12, -this.size/2 - 8, 24, 3);
-            ctx.fillStyle = '#0f0'; ctx.fillRect(-12, -this.size/2 - 8, 24 * (this.hp / this.maxHp), 3);
+            ctx.fillStyle = '#f00'; ctx.fillRect(-12, -this.size / 2 - 8, 24, 3);
+            ctx.fillStyle = '#0f0'; ctx.fillRect(-12, -this.size / 2 - 8, 24 * (this.hp / this.maxHp), 3);
         }
         ctx.restore();
     }
 }
 
 function spawnPrey() {
-    if (state.flies.length >= 6) return;
-    let x = Math.random() * (COLS - 4) * TILE_SIZE + TILE_SIZE * 2;
-    let y = Math.random() * (SURFACE_Y - 3) * TILE_SIZE + TILE_SIZE;
-    state.flies.push(new Prey(x, y));
+    if (state.flies.length >= 10) return;
+    let queen = state.entities.find(e => e.type === 'queen');
+    let originX = queen ? queen.x : 0;
+    // Scatter widely so exploring finds more bugs, not just a huddle at spawn
+    let gx = Math.round(originX / TILE_SIZE) + Math.floor((Math.random() - 0.5) * 80);
+    let surf = surfaceHeightAt(gx);
+    let gy = surf - 1 - Math.floor(Math.random() * 4);
+    state.flies.push(new Prey(gx * TILE_SIZE + 20, gy * TILE_SIZE + 20));
 }
 
 class Ant {
@@ -480,16 +564,14 @@ class Ant {
         this.state = 'IDLE'; this.path = []; this.job = null;
 
         this.maxHp = STATS[type].hp; this.hp = this.maxHp;
-        this.dmg = STATS[type].dmg; this.speed = STATS[type].speed;
-        this.baseSpeed = STATS[type].speed;
+        this.dmg = STATS[type].dmg; this.baseSpeed = STATS[type].speed; this.speed = this.baseSpeed;
 
         this.angle = 0; this.wobble = Math.random() * Math.PI;
         this.attackTimer = 0; this.flash = 0;
         this.underAttack = 0;
         this.alertTimer = 0;
-        this.carriedResource = null; // 'seed' | 'meat' | 'dirt' | brood object
+        this.carriedResource = null;
         this.carriedBrood = null;
-        this.eggCooldown = 0; // queen-only: prevents insta-laying every frame
     }
 
     update() {
@@ -499,7 +581,7 @@ class Ant {
         if (this.alertTimer > 0) this.alertTimer--;
         this.speed = (this.state === 'DEFENDING') ? 0 : this.baseSpeed;
 
-        // DIRECT PLAYER CONTROL OVERRIDE
+        // DIRECT PLAYER CONTROL — always takes priority, never gets blocked by AI or UI state
         if (state.controlledAnt === this) {
             this.handlePlayerControl();
             resolveCollision(this);
@@ -512,78 +594,48 @@ class Ant {
             return;
         }
 
-        // COMBAT SYSTEM (AI)
+        if (this.type === 'army_ant') {
+            this.updateArmyAntAI();
+            resolveCollision(this);
+            return;
+        }
+
+        // COMBAT SYSTEM (colony ants defending)
         if (this.attackTimer > 0) this.attackTimer--;
-        if (this.type !== 'queen') {
-            let enemyTypes = this.type === 'army_ant' ? ['minor', 'major', 'super_major', 'queen'] : ['army_ant'];
-            let target = state.entities.find(e => enemyTypes.includes(e.type) && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.2);
-
-            // Army ants will also target undefended brood as food
-            let broodTarget = null;
-            if (this.type === 'army_ant' && !target) {
-                broodTarget = state.brood.find(b => !b.carriedBy && Math.hypot(b.x * TILE_SIZE + 20 - this.x, b.y * TILE_SIZE + 20 - this.y) < TILE_SIZE * 4);
+        let target = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.2);
+        if (target) {
+            if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING' || this.state === 'FEEDING_LARVA') {
+                if (this.job) { this.job.assigned = false; this.job = null; }
+                this.state = 'IDLE';
             }
+            this.path = [];
+            this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+            if (this.attackTimer <= 0) {
+                target.hp -= this.dmg;
+                target.flash = 10;
+                target.underAttack = 300;
+                this.attackTimer = 30;
+                spawnParticles(target.x, target.y, '#ff0000', 6, 6);
+                triggerShake(2);
 
-            if (target) {
-                if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING') {
-                    if (this.job) { this.job.assigned = false; this.job = null; }
-                    this.state = 'IDLE';
-                }
-
-                this.path = [];
-                this.angle = Math.atan2(target.y - this.y, target.x - this.x);
-                if (this.attackTimer <= 0) {
-                    target.hp -= this.dmg;
-                    target.flash = 10;
-                    target.underAttack = 300;
-                    this.attackTimer = 30;
-                    spawnParticles(target.x, target.y, '#ff0000', 6, 6);
-                    triggerShake(2);
-
-                    const lungeDist = 8;
-                    const lungeX = this.x + Math.cos(this.angle) * lungeDist;
-                    const lungeY = this.y + Math.sin(this.angle) * lungeDist;
-                    if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) {
-                        this.x = lungeX;
-                        this.y = lungeY;
-                    }
-                }
-                resolveCollision(this);
-                return;
-            } else if (broodTarget) {
-                let bx = broodTarget.x * TILE_SIZE + 20, by = broodTarget.y * TILE_SIZE + 20;
-                let dist = Math.hypot(bx - this.x, by - this.y);
-                if (dist < TILE_SIZE * 0.7) {
-                    state.brood = state.brood.filter(b => b !== broodTarget);
-                    spawnParticles(bx, by, '#7fd3ff', 10, 5);
-                    spawnText(bx, by - 10, 'BROOD EATEN', '#ff5555');
-                    triggerShake(3);
-                    updateUI();
-                } else {
-                    this.path = findPath(this.gx, this.gy, broodTarget.x, broodTarget.y, true) || [];
-                }
-                resolveCollision(this);
-                return;
+                const lungeDist = 8;
+                const lungeX = this.x + Math.cos(this.angle) * lungeDist;
+                const lungeY = this.y + Math.sin(this.angle) * lungeDist;
+                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
             }
-
-            // Army ants hunt prey too if nothing else to do
-            if (this.type === 'army_ant' && this.path.length === 0 && Math.random() < 0.03) {
-                let prey = state.flies[Math.floor(Math.random() * state.flies.length)];
-                if (prey) this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE), true) || [];
-            }
+            resolveCollision(this);
+            return;
         }
 
         // MOVEMENT
         if (this.path.length > 0) {
             let target = this.path[0];
-            let tx = target.x * TILE_SIZE + TILE_SIZE / 2;
-            let ty = target.y * TILE_SIZE + TILE_SIZE / 2;
+            let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
             let dist = Math.hypot(dx, dy);
 
-            if (dist < this.speed) {
-                this.x = tx; this.y = ty; this.path.shift();
-            } else {
+            if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
+            else {
                 this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed;
                 this.angle = Math.atan2(dy, dx);
                 this.wobble += 0.4;
@@ -596,18 +648,97 @@ class Ant {
         resolveCollision(this);
     }
 
-    // Queen: lays eggs periodically, can be fed, otherwise mostly stationary with small wandering
+    // ARMY ANTS: fight to the death, charge straight at the colony's brood/queen/ants, never despawn on a timer
+    updateArmyAntAI() {
+        if (this.attackTimer > 0) this.attackTimer--;
+
+        let target = state.entities.find(e => e.type !== 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.2);
+        if (target) {
+            this.path = [];
+            this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+            if (this.attackTimer <= 0) {
+                target.hp -= this.dmg;
+                target.flash = 10;
+                target.underAttack = 300;
+                this.attackTimer = 28;
+                spawnParticles(target.x, target.y, '#ff0000', 6, 6);
+                triggerShake(2);
+                const lungeDist = 8;
+                const lungeX = this.x + Math.cos(this.angle) * lungeDist;
+                const lungeY = this.y + Math.sin(this.angle) * lungeDist;
+                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+            }
+            return;
+        }
+
+        // No ant in melee range: charge toward nearest brood if closer than the queen, else the queen.
+        // This is a HARD priority — army ants beeline for the nest's brood, they don't wander.
+        let nearestBrood = null, nearestBroodDist = Infinity;
+        for (let b of state.brood) {
+            if (b.carriedBy) continue;
+            let d = Math.hypot(b.x * TILE_SIZE + 20 - this.x, b.y * TILE_SIZE + 20 - this.y);
+            if (d < nearestBroodDist) { nearestBroodDist = d; nearestBrood = b; }
+        }
+        let queen = state.entities.find(e => e.type === 'queen');
+
+        // Eat brood on contact
+        if (nearestBrood && nearestBroodDist < TILE_SIZE * 0.7) {
+            let bx = nearestBrood.x * TILE_SIZE + 20, by = nearestBrood.y * TILE_SIZE + 20;
+            state.brood = state.brood.filter(b => b !== nearestBrood);
+            spawnParticles(bx, by, '#7fd3ff', 10, 5);
+            spawnText(bx, by - 10, 'BROOD EATEN', '#ff5555');
+            triggerShake(3);
+            updateUI();
+            return;
+        }
+
+        let chaseTarget = null;
+        if (nearestBrood && queen) {
+            chaseTarget = (nearestBroodDist < Math.hypot(queen.x - this.x, queen.y - this.y)) ?
+                { gx: nearestBrood.x, gy: nearestBrood.y } : { gx: queen.gx, gy: queen.gy };
+        } else if (nearestBrood) {
+            chaseTarget = { gx: nearestBrood.x, gy: nearestBrood.y };
+        } else if (queen) {
+            chaseTarget = { gx: queen.gx, gy: queen.gy };
+        }
+
+        if (chaseTarget) {
+            if (this.path.length === 0 || Math.random() < 0.08) {
+                this.path = findPath(this.gx, this.gy, chaseTarget.gx, chaseTarget.gy, true) || [];
+            }
+        }
+
+        if (this.path.length > 0) {
+            let t = this.path[0];
+            let tx = t.x * TILE_SIZE + TILE_SIZE / 2, ty = t.y * TILE_SIZE + TILE_SIZE / 2;
+            let dx = tx - this.x, dy = ty - this.y;
+            let dist = Math.hypot(dx, dy);
+            if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
+            else {
+                this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed;
+                this.angle = Math.atan2(dy, dx);
+                this.wobble += 0.4;
+            }
+        } else if (chaseTarget) {
+            // No path found (blocked by walls) — dig straight through toward the target like a real raid would breach a nest
+            let dgx = this.gx + Math.sign(chaseTarget.gx - this.gx);
+            let dgy = this.gy + Math.sign(chaseTarget.gy - this.gy);
+            if (isWall(dgx, dgy) && !isRock(dgx, dgy) && Math.random() < 0.02) {
+                setTile(dgx, dgy, 0);
+                spawnParticles(dgx * TILE_SIZE + 20, dgy * TILE_SIZE + 20, '#5c4033', 10);
+            }
+        }
+    }
+
     updateQueenAI() {
-        if (this.eggCooldown > 0) this.eggCooldown--;
         if (Math.random() < 0.003 && this.path.length === 0) {
             let nx = this.gx + Math.floor(Math.random() * 4) - 2;
             let ny = this.gy + Math.floor(Math.random() * 4) - 2;
-            if (state.grid[ny] && state.grid[ny][nx] === 0) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+            if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
         }
         if (this.path.length > 0) {
             let target = this.path[0];
-            let tx = target.x * TILE_SIZE + TILE_SIZE / 2;
-            let ty = target.y * TILE_SIZE + TILE_SIZE / 2;
+            let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
             let dist = Math.hypot(dx, dy);
             if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
@@ -624,8 +755,7 @@ class Ant {
         if (keys.arrowright) dx += this.speed * moveSpeedMult;
 
         if (dx !== 0 || dy !== 0) {
-            this.x += dx;
-            this.y += dy;
+            this.x += dx; this.y += dy;
             this.angle = Math.atan2(dy, dx);
             this.wobble += 0.5;
             if (Math.random() < 0.2 && this.gy >= SURFACE_Y) spawnParticles(this.x, this.y, '#5c4033', 1, 1);
@@ -638,30 +768,23 @@ class Ant {
     }
 
     performManualAction() {
-        // Queen can't fight or dig/build — she can only be moved. No action.
-        if (this.type === 'queen') return;
+        if (this.type === 'queen') return; // queen can only be walked around
 
-        // Attack nearby army ant
         let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.5);
         if (enemy) {
             enemy.hp -= this.dmg; enemy.flash = 10; enemy.underAttack = 300;
             spawnParticles(enemy.x, enemy.y, '#ff0000', 8, 6);
             triggerShake(3);
-
             const lungeDist = 10;
             const lungeX = this.x + Math.cos(this.angle) * lungeDist;
             const lungeY = this.y + Math.sin(this.angle) * lungeDist;
-            if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) {
-                this.x = lungeX;
-                this.y = lungeY;
-            }
+            if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
             return;
         }
 
-        // Attack nearby prey (hunting for meat)
         let prey = state.flies.find(f => Math.hypot(f.x - this.x, f.y - this.y) < TILE_SIZE * 1.3);
         if (prey && !this.carriedResource && !this.carriedBrood) {
-            prey.hp -= this.dmg * 2; // ants are more effective vs small prey
+            prey.hp -= this.dmg * 2;
             prey.flash = 10;
             spawnParticles(prey.x, prey.y, '#aa3333', 6, 5);
             triggerShake(2);
@@ -676,14 +799,11 @@ class Ant {
             return;
         }
 
-        // If carrying dirt, place a wall
         if (this.state === 'CARRYING_DIRT') {
             let targetGx = this.gx + Math.round(Math.cos(this.angle));
             let targetGy = this.gy + Math.round(Math.sin(this.angle));
-
-            if (targetGy >= 0 && targetGy < ROWS && targetGx >= 0 && targetGx < COLS && state.grid[targetGy][targetGx] === 0
-                && !state.entities.some(e => e.gx === targetGx && e.gy === targetGy)) {
-                state.grid[targetGy][targetGx] = 1;
+            if (!isWall(targetGx, targetGy) && !state.entities.some(e => e.gx === targetGx && e.gy === targetGy)) {
+                setTile(targetGx, targetGy, 1);
                 spawnParticles(targetGx * TILE_SIZE + 20, targetGy * TILE_SIZE + 20, '#8b5a2b', 12, 3);
                 triggerShake(3);
                 spawnText(targetGx * TILE_SIZE + 20, targetGy * TILE_SIZE, "WALL!", "#d4a574");
@@ -692,10 +812,9 @@ class Ant {
             return;
         }
 
-        // If carrying a resource: feed the queen if standing on/adjacent to her, else drop it
         if (this.state === 'CARRYING_RESOURCE') {
             let queen = state.entities.find(e => e.type === 'queen');
-            if (queen && Math.hypot(this.x - queen.x, this.y - queen.y) < TILE_SIZE * 1.1) {
+            if (queen && Math.hypot(this.x - queen.x, this.y - queen.y) < TILE_SIZE * 1.2) {
                 state.queenHunger = Math.min(100, state.queenHunger + 35);
                 spawnParticles(queen.x, queen.y - 10, this.carriedResource === 'seed' ? '#f1c40f' : '#e74c3c', 12, 5);
                 spawnText(queen.x, queen.y - 25, "Queen Fed!", "#7fd3ff");
@@ -703,11 +822,19 @@ class Ant {
                 this.carriedResource = null; this.state = 'IDLE';
                 return;
             }
+            // Feed a hungry larva if we're standing on/next to one
+            let larvaHere = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === this.gx && b.y === this.gy);
+            if (larvaHere) {
+                larvaHere.fed = true; larvaHere.needsFood = false;
+                spawnParticles(this.x, this.y, '#2ecc71', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed!", "#2ecc71");
+                this.carriedResource = null; this.state = 'IDLE';
+                return;
+            }
             state.surfaceItems.push({ type: this.carriedResource, x: this.gx, y: this.gy });
             this.state = 'IDLE'; this.carriedResource = null; return;
         }
 
-        // If carrying brood: set it down at the current tile (can't stack on top of other brood)
         if (this.state === 'CARRYING_BROOD') {
             if (state.brood.some(b => b !== this.carriedBrood && !b.carriedBy && b.x === this.gx && b.y === this.gy)) {
                 spawnText(this.x, this.y - 15, "Tile occupied", "#ff5555", 13);
@@ -719,7 +846,18 @@ class Ant {
             return;
         }
 
-        // Nothing carried: try pick up brood first, then resource, then dig/harvest
+        // Nothing carried: feed hungry larva standing here first if we have food to spend from the colony stockpile,
+        // then pick up brood, then pick up a resource, then dig.
+        let larvaHere2 = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === this.gx && b.y === this.gy);
+        let itemHere = state.surfaceItems.find(i => i.x === this.gx && i.y === this.gy);
+        if (larvaHere2 && itemHere) {
+            state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere);
+            larvaHere2.fed = true; larvaHere2.needsFood = false;
+            spawnParticles(this.x, this.y, '#2ecc71', 10, 5);
+            spawnText(this.x, this.y - 15, "Larva Fed!", "#2ecc71");
+            return;
+        }
+
         let broodHere = state.brood.find(b => !b.carriedBy && b.x === this.gx && b.y === this.gy);
         if (broodHere) {
             this.carriedBrood = broodHere; broodHere.carriedBy = this;
@@ -728,89 +866,77 @@ class Ant {
             return;
         }
 
-        // Feed a hungry larva that's sitting on the ground with food we're standing on
-        let item = state.surfaceItems.find(i => i.x === this.gx && i.y === this.gy);
-        let larvaHere = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === this.gx && b.y === this.gy);
-        if (larvaHere && item) {
-            state.surfaceItems = state.surfaceItems.filter(i => i !== item);
-            larvaHere.fed = true; larvaHere.needsFood = false;
-            spawnParticles(this.x, this.y, '#2ecc71', 10, 5);
-            spawnText(this.x, this.y - 15, "Larva Fed!", "#2ecc71");
-            return;
-        }
-
-        if (item) {
-            this.carriedResource = item.type; this.state = 'CARRYING_RESOURCE';
-            state.surfaceItems = state.surfaceItems.filter(i => i !== item);
+        if (itemHere) {
+            this.carriedResource = itemHere.type; this.state = 'CARRYING_RESOURCE';
+            state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere);
             return;
         }
 
         let targetGx = this.gx + Math.round(Math.cos(this.angle));
         let targetGy = this.gy + Math.round(Math.sin(this.angle));
-        if (targetGy >= SURFACE_Y && state.grid[targetGy] && state.grid[targetGy][targetGx] === 1) {
-            state.grid[targetGy][targetGx] = 0;
+        if (isWall(targetGx, targetGy) && !isRock(targetGx, targetGy)) {
+            setTile(targetGx, targetGy, 0);
             spawnParticles(targetGx * TILE_SIZE + 20, targetGy * TILE_SIZE + 20, '#5c4033', 15);
             this.state = 'CARRYING_DIRT';
+        } else if (isRock(targetGx, targetGy)) {
+            spawnText(this.x, this.y - 15, "Too hard to dig!", "#999", 13);
         }
     }
 
     handleStateLogic() {
         if (this.type === 'queen') return;
 
-        // POST-BATTLE RETREAT LOGIC
-        if (state.postBattleTimer > 0 && this.type !== 'army_ant') {
+        if (state.postBattleTimer > 0) {
             if (this.gy >= SURFACE_Y) {
-                let centerX = Math.floor(COLS / 2);
-                let surfaceTargetY = SURFACE_Y - 2;
-                if (this.path.length === 0 || Math.random() < 0.02) {
-                    this.path = findPath(this.gx, this.gy, centerX, surfaceTargetY) || [];
-                }
-            } else {
-                if (this.path.length === 0 && Math.random() < 0.05) {
-                    let nx = this.gx + Math.floor(Math.random() * 10) - 5;
-                    let ny = Math.max(0, Math.min(SURFACE_Y - 2, this.gy + Math.floor(Math.random() * 6) - 3));
-                    this.path = findPath(this.gx, this.gy, nx, ny) || [];
-                }
-            }
-            return;
-        }
-
-        // DISTRESS SYSTEM
-        if (this.type !== 'army_ant') {
-            let distressAnt = state.entities.find(e => e.underAttack > 0 && e.type !== 'army_ant' && e !== this);
-            if (distressAnt) {
-                let dist = Math.hypot(this.x - distressAnt.x, this.y - distressAnt.y);
-                if (dist < TILE_SIZE * 8) {
-                    let shouldHelp = (distressAnt.type === 'queen') || (this.type === 'major') || (this.type === 'super_major' && distressAnt.gy >= SURFACE_Y);
-                    if (shouldHelp) {
-                        if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING') {
-                            if (this.job) { this.job.assigned = false; this.job = null; }
-                            this.state = 'IDLE';
-                        }
-                        this.path = findPath(this.gx, this.gy, distressAnt.gx, distressAnt.gy) || [];
-                        this.alertTimer = 60;
-                        return;
-                    }
-                }
-            }
-        }
-
-        if (this.type === 'army_ant') {
-            if (Math.random() < 0.05) {
                 let queen = state.entities.find(e => e.type === 'queen');
-                if (queen) this.path = findPath(this.gx, this.gy, queen.gx, queen.gy, true) || [];
+                if (queen && (this.path.length === 0 || Math.random() < 0.02)) {
+                    this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                }
+            } else if (this.path.length === 0 && Math.random() < 0.05) {
+                let nx = this.gx + Math.floor(Math.random() * 10) - 5;
+                let ny = Math.max(0, Math.min(SURFACE_Y - 2, this.gy + Math.floor(Math.random() * 6) - 3));
+                if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
             }
             return;
+        }
+
+        let distressAnt = state.entities.find(e => e.underAttack > 0 && e.type !== 'army_ant' && e !== this);
+        if (distressAnt) {
+            let dist = Math.hypot(this.x - distressAnt.x, this.y - distressAnt.y);
+            if (dist < TILE_SIZE * 8) {
+                let shouldHelp = (distressAnt.type === 'queen') || (this.type === 'major') || (this.type === 'super_major' && distressAnt.gy >= SURFACE_Y);
+                if (shouldHelp) {
+                    if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING' || this.state === 'FEEDING_LARVA') {
+                        if (this.job) { this.job.assigned = false; this.job = null; }
+                        this.state = 'IDLE';
+                    }
+                    this.path = findPath(this.gx, this.gy, distressAnt.gx, distressAnt.gy) || [];
+                    this.alertTimer = 60;
+                    return;
+                }
+            }
         }
 
         if (this.state === 'IDLE') {
             let workersAlive = state.entities.some(e => e.type === 'minor' || e.type === 'major');
 
-            // Priority: feed a hungry larva if one needs food and we have nothing else pressing
             if (!this.job) {
                 let hungryLarva = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && !state.jobs.some(j => j.type === 'FEED_LARVA' && j.broodId === b.id));
                 if (hungryLarva && (this.type === 'minor' || this.type === 'major')) {
                     state.jobs.push({ type: 'FEED_LARVA', x: hungryLarva.x, y: hungryLarva.y, broodId: hungryLarva.id, assigned: false });
+                }
+            }
+
+            // Hunting: minors/majors will proactively go kill nearby prey if idle and none are already being chased
+            if (!this.job && (this.type === 'minor' || this.type === 'major') && state.flies.length > 0 && Math.random() < 0.02) {
+                let huntedIds = state.entities.filter(e => e.huntTargetId).map(e => e.huntTargetId);
+                let prey = state.flies.find(f => !huntedIds.includes(f.id) && Math.hypot(f.x - this.x, f.y - this.y) < TILE_SIZE * 14);
+                if (prey) {
+                    if (!prey.id) prey.id = Math.random().toString(36).slice(2);
+                    this.huntTargetId = prey.id;
+                    this.state = 'HUNTING';
+                    this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                    return;
                 }
             }
 
@@ -824,9 +950,9 @@ class Ant {
             }
 
             if (this.type === 'super_major' && workersAlive && Math.random() < 0.005) {
-                let targetX = Math.floor(Math.random() * COLS);
-                let targetY = Math.floor(Math.random() * (SURFACE_Y - 2));
-                this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
+                let targetX = this.gx + Math.floor(Math.random() * 20) - 10;
+                let targetY = this.gy + Math.floor(Math.random() * 10) - 5;
+                if (!isWall(targetX, targetY)) this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
             }
 
             if (!this.job && this.type !== 'super_major') {
@@ -838,8 +964,28 @@ class Ant {
                 } else if (Math.random() < 0.02) {
                     let nx = this.gx + Math.floor(Math.random() * 5) - 2;
                     let ny = this.gy + Math.floor(Math.random() * 5) - 2;
-                    if (state.grid[ny] && state.grid[ny][nx] === 0) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                    if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
                 }
+            }
+        } else if (this.state === 'HUNTING') {
+            let prey = state.flies.find(f => f.id === this.huntTargetId);
+            if (!prey) { this.state = 'IDLE'; this.huntTargetId = null; return; }
+            let dist = Math.hypot(prey.x - this.x, prey.y - this.y);
+            if (dist < TILE_SIZE * 1.2) {
+                prey.hp -= this.dmg * 1.5;
+                prey.flash = 8;
+                spawnParticles(prey.x, prey.y, '#aa3333', 4, 4);
+                if (prey.hp <= 0) {
+                    state.flies = state.flies.filter(f => f !== prey);
+                    spawnParticles(prey.x, prey.y, '#4a3728', 14, 6, null, 0.1);
+                    let gx = Math.floor(prey.x / TILE_SIZE), gy = Math.floor(prey.y / TILE_SIZE);
+                    state.surfaceItems.push({ type: 'meat', x: gx, y: gy });
+                    state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
+                    this.state = 'IDLE'; this.huntTargetId = null;
+                }
+            } else if (Math.random() < 0.1) {
+                this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                if (this.path.length === 0) { this.state = 'IDLE'; this.huntTargetId = null; }
             }
         } else if (this.state === 'MOVING_TO_JOB') {
             if (Math.hypot(this.gx - this.job.x, this.gy - this.job.y) <= 1) {
@@ -853,16 +999,20 @@ class Ant {
             this.digTimer--;
             if (this.digTimer % 5 === 0) spawnParticles(this.x, this.y, '#5c4033', 2);
             if (this.digTimer <= 0) {
-                state.grid[this.job.y][this.job.x] = 0;
+                setTile(this.job.x, this.job.y, 0);
                 spawnParticles(this.job.x * TILE_SIZE + 20, this.job.y * TILE_SIZE + 20, '#5c4033', 15);
                 state.jobs = state.jobs.filter(j => j !== this.job);
                 this.job = null; this.state = 'CARRYING_DIRT';
-                this.path = findPath(this.gx, this.gy, Math.floor(COLS / 2), SURFACE_Y - 2) || [];
+                let queen = state.entities.find(e => e.type === 'queen');
+                this.path = queen ? (findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || []) : [];
             }
         } else if (this.state === 'CARRYING_DIRT') {
             if (this.gy < SURFACE_Y) {
                 this.state = 'IDLE'; spawnParticles(this.x, this.y, '#8b5a2b', 8);
-            } else if (this.path.length === 0) this.path = findPath(this.gx, this.gy, Math.floor(COLS / 2), SURFACE_Y - 2) || [];
+            } else if (this.path.length === 0) {
+                let queen = state.entities.find(e => e.type === 'queen');
+                this.path = queen ? (findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || []) : [];
+            }
         } else if (this.state === 'HARVESTING') {
             this.digTimer--;
             if (this.digTimer <= 0) {
@@ -903,7 +1053,6 @@ class Ant {
                 this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
             }
         } else if (this.state === 'CARRYING_BROOD') {
-            // AI-controlled ants don't currently pick up brood autonomously; safety fallback
             this.state = 'IDLE';
         }
     }
@@ -915,7 +1064,7 @@ class Ant {
             let adj = [
                 { x: job.x, y: job.y - 1 }, { x: job.x, y: job.y + 1 },
                 { x: job.x - 1, y: job.y }, { x: job.x + 1, y: job.y }
-            ].find(n => state.grid[n.y] && state.grid[n.y][n.x] === 0);
+            ].find(n => !isWall(n.x, n.y));
             if (adj) { targetX = adj.x; targetY = adj.y; }
         }
         this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
@@ -940,12 +1089,10 @@ class Ant {
         let asset = ASSETS[this.type];
         let size = this.type === 'queen' ? TILE_SIZE * 1.5 : this.type === 'super_major' ? TILE_SIZE * 1.2 : TILE_SIZE;
 
-        let drawW = size;
-        let drawH = size;
+        let drawW = size, drawH = size;
         if (asset.loaded && asset.img.width && asset.img.height) {
             let aspect = asset.img.width / asset.img.height;
-            if (aspect > 1) drawH = size / aspect;
-            else drawW = size * aspect;
+            if (aspect > 1) drawH = size / aspect; else drawW = size * aspect;
             ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
         } else {
             ctx.fillStyle = asset.fallback;
@@ -1014,44 +1161,43 @@ function drawBroodShape(x, y, stage) {
 /**
  * GAME LOGIC
  */
-function spawnResource() {
-    // Seeds respawn on a steady 15s cadence (handled in update via seedRespawnTimer)
-    // Meat no longer spawns from thin air — it comes from hunting prey (see Prey class + performManualAction)
-}
-
 function respawnSeeds() {
-    let toSpawn = 2 + Math.floor(Math.random() * 2);
+    let queen = state.entities.find(e => e.type === 'queen');
+    let originX = queen ? queen.gx : 0;
+    let toSpawn = 3 + Math.floor(Math.random() * 3);
     let spawned = 0;
-    for (let i = 0; i < toSpawn && state.surfaceItems.length < 30; i++) {
-        let rx = Math.floor(Math.random() * COLS);
-        let ry = Math.floor(Math.random() * (SURFACE_Y - 1));
-        if (state.grid[ry][rx] !== 0) continue;
+    for (let i = 0; i < toSpawn && state.surfaceItems.length < 60; i++) {
+        let rx = originX + Math.floor((Math.random() - 0.5) * 100);
+        let surf = surfaceHeightAt(rx);
+        let ry = surf - 1 - Math.floor(Math.random() * 4);
+        if (isWall(rx, ry)) continue;
         state.surfaceItems.push({ type: 'seed', x: rx, y: ry });
         state.jobs.push({ type: 'HARVEST', x: rx, y: ry, resourceType: 'seed', assigned: false });
         spawned++;
     }
-    if (spawned > 0) toast('🌰 New seeds sprouted on the surface');
+    if (spawned > 0) toast('🌰 New seeds sprouted nearby');
 }
 
-function layEgg() {
+function layEgg(willHatchAs = 'minor', silent = false) {
     let queen = state.entities.find(e => e.type === 'queen');
-    if (!queen) return;
+    if (!queen) return null;
     let gx = queen.gx, gy = queen.gy;
-    // find an open adjacent tile
     let spots = [
         { x: gx, y: gy + 1 }, { x: gx + 1, y: gy }, { x: gx - 1, y: gy }, { x: gx, y: gy - 1 },
         { x: gx + 1, y: gy + 1 }, { x: gx - 1, y: gy + 1 }
-    ].filter(s => state.grid[s.y] && state.grid[s.y][s.x] === 0 && !state.brood.some(b => b.x === s.x && b.y === s.y));
+    ].filter(s => !isWall(s.x, s.y) && !state.brood.some(b => b.x === s.x && b.y === s.y));
     let spot = spots[Math.floor(Math.random() * spots.length)] || { x: gx, y: gy };
-    let egg = makeBrood(spot.x, spot.y);
+    let egg = makeBrood(spot.x, spot.y, willHatchAs);
     state.brood.push(egg);
     spawnParticles(spot.x * TILE_SIZE + 20, spot.y * TILE_SIZE + 20, '#e8f4ff', 8, 3);
-    spawnText(queen.x, queen.y - 30, "Egg Laid", "#e8f4ff", 14);
+    if (!silent) spawnText(queen.x, queen.y - 30, "Egg Laid", "#e8f4ff", 14);
+    updateUI();
+    return egg;
 }
 
 function updateBrood() {
     for (let b of state.brood) {
-        if (b.carriedBy) continue; // paused while being carried
+        if (b.carriedBy) continue;
         b.timer--;
 
         if (b.stage === 'larva' && !b.needsFood && !b.fed && b.timer <= LARVA_TIME * 0.5) {
@@ -1065,19 +1211,14 @@ function updateBrood() {
                 b.stage = 'larva'; b.timer = LARVA_TIME; b.needsFood = false; b.fed = false;
                 spawnParticles(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, '#f5f0d5', 8, 3);
             } else if (b.stage === 'larva') {
-                if (b.needsFood && !b.fed) {
-                    // Not fed in time — larva stalls, waits (don't advance, keep timer at 0 and re-check each frame)
-                    b.timer = 30; // brief grace re-check window; will keep pinging
-                    continue;
-                }
+                if (b.needsFood && !b.fed) { b.timer = 30; continue; }
                 b.stage = 'pupa'; b.timer = PUPA_TIME;
                 spawnParticles(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, '#d9c9a3', 8, 3);
             } else if (b.stage === 'pupa') {
-                // Hatch into a minor ant
-                let queen = state.entities.find(e => e.type === 'queen');
-                state.entities.push(new Ant('minor', b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20));
+                let hatchType = b.willHatchAs || 'minor';
+                state.entities.push(new Ant(hatchType, b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20));
                 spawnParticles(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, '#f1c40f', 16, 5);
-                spawnText(b.x * TILE_SIZE + 20, b.y * TILE_SIZE, "Hatched!", "#2ecc71", 16);
+                spawnText(b.x * TILE_SIZE + 20, b.y * TILE_SIZE, hatchType.replace('_', ' ').toUpperCase() + " HATCHED!", "#2ecc71", 15);
                 triggerShake(2);
                 b._hatched = true;
             }
@@ -1093,25 +1234,30 @@ function triggerRaid() {
     document.getElementById('wave-num').innerText = state.wave;
     document.getElementById('raid-warning').style.display = 'block';
     triggerShake(20);
-    toast('⚠️ Army ants incoming — they will eat brood too!');
+    toast('⚠️ Wave ' + state.wave + ': Army ants are charging your brood!');
 
-    let antCount = 5 + (state.wave * 3);
+    // Escalating waves — each one bigger than the last, scaling faster than a colony that isn't growing can handle
+    let antCount = Math.round(5 + Math.pow(state.wave, 1.6) * 2);
+    let queen = state.entities.find(e => e.type === 'queen');
+    let originGx = queen ? queen.gx : 0, originGy = queen ? queen.gy : SURFACE_Y;
+
     for (let i = 0; i < antCount; i++) {
         setTimeout(() => {
-            let startX = Math.random() > 0.5 ? 0 : COLS - 1;
-            let startY = Math.floor(Math.random() * 5);
-            state.entities.push(new Ant('army_ant', startX * TILE_SIZE + 20, startY * TILE_SIZE + 20));
-        }, i * 600);
+            let angle = Math.random() * Math.PI * 2;
+            let dist = 24 + Math.random() * 10;
+            let startGx = originGx + Math.round(Math.cos(angle) * dist);
+            let startGy = Math.max(0, Math.min(SURFACE_Y - 2, originGy + Math.round(Math.sin(angle) * dist * 0.3) - 8));
+            state.entities.push(new Ant('army_ant', startGx * TILE_SIZE + 20, startGy * TILE_SIZE + 20));
+        }, i * 400);
     }
     setTimeout(() => {
         state.isRaidActive = false;
         state.postBattleTimer = 600;
         document.getElementById('raid-warning').style.display = 'none';
         state.wave++;
-
-        state.entities = state.entities.filter(e => e.type !== 'army_ant');
-        spawnText(canvas.width / 2, canvas.height / 2, "RAID CLEARED!", "#2ecc71", 26);
-    }, 20000);
+        // NOTE: army ants are no longer force-removed here — any survivors keep fighting/hunting until they die for real.
+        spawnText(canvas.width / 2, canvas.height / 2, "MAIN WAVE OVER — SURVIVORS REMAIN!", "#e74c3c", 20);
+    }, antCount * 400 + 4000);
 }
 
 /**
@@ -1125,12 +1271,9 @@ function setTool(tool) {
 
 function getWorldPos(e) {
     const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
+    const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
     const cx = (mouseX - canvas.width / 2) / camera.zoom + (canvas.width / 2 + camera.x);
     const cy = (mouseY - canvas.height / 2) / camera.zoom + (canvas.height / 2 + camera.y);
-
     return { cx, cy, gx: Math.floor(cx / TILE_SIZE), gy: Math.floor(cy / TILE_SIZE) };
 }
 
@@ -1148,21 +1291,15 @@ function handleInput(e) {
             state.controlledAnt = clickedAnt;
             if (clickedAnt.job) { clickedAnt.job.assigned = false; clickedAnt.job = null; }
             clickedAnt.path = [];
-            if (clickedAnt.type === 'super_major') document.getElementById('context-menu').style.display = 'flex';
-            else document.getElementById('context-menu').style.display = 'none';
+            document.getElementById('context-menu').style.display = (clickedAnt.type === 'super_major' || clickedAnt.type === 'major') ? 'flex' : 'none';
             return;
         } else if (!clickedAnt) {
             state.controlledAnt = null;
             document.getElementById('context-menu').style.display = 'none';
         }
 
-        if (gy >= SURFACE_Y && state.grid[gy] && state.grid[gy][gx] === 1) {
-            let isExposed = false;
-            if (gy > 0 && state.grid[gy - 1][gx] === 0) isExposed = true;
-            if (gy < ROWS - 1 && state.grid[gy + 1][gx] === 0) isExposed = true;
-            if (gx > 0 && state.grid[gy][gx - 1] === 0) isExposed = true;
-            if (gx < COLS - 1 && state.grid[gy][gx + 1] === 0) isExposed = true;
-
+        if (isWall(gx, gy) && !isRock(gx, gy)) {
+            let isExposed = !isWall(gx, gy - 1) || !isWall(gx, gy + 1) || !isWall(gx - 1, gy) || !isWall(gx + 1, gy);
             if (isExposed && !state.jobs.some(j => j.x === gx && j.y === gy && j.type === 'DIG')) {
                 state.jobs.push({ type: 'DIG', x: gx, y: gy, assigned: false });
                 spawnParticles(cx, cy, '#5c4033', 5);
@@ -1190,12 +1327,16 @@ document.getElementById('release-btn').addEventListener('click', () => {
     document.getElementById('context-menu').style.display = 'none';
 });
 
+// Spawning now lays an EGG tagged with the ant type it will hatch into, instead of instantly creating the ant.
 function buyAnt(type, seedCost, meatCost) {
     if (state.resources.seeds >= seedCost && state.resources.meat >= meatCost) {
         state.resources.seeds -= seedCost; state.resources.meat -= meatCost;
-        let queen = state.entities.find(e => e.type === 'queen');
-        state.entities.push(new Ant(type, queen.x, queen.y));
-        spawnParticles(queen.x, queen.y, '#fff', 15);
+        let egg = layEgg(type, true);
+        if (egg) {
+            let queen = state.entities.find(e => e.type === 'queen');
+            spawnParticles(queen.x, queen.y, '#fff', 15);
+            spawnText(queen.x, queen.y - 30, (type === 'super_major' ? 'Super Major' : type[0].toUpperCase() + type.slice(1)) + " Egg Laid", "#7fd3ff", 14);
+        }
         updateUI();
     }
 }
@@ -1214,8 +1355,7 @@ function updateUI() {
     document.getElementById('spawn-super').disabled = state.resources.seeds < 4 || state.resources.meat < 2;
     document.getElementById('queen-hunger-fill').style.width = Math.max(0, state.queenHunger) + '%';
     let hungerFill = document.getElementById('queen-hunger-fill');
-    if (state.queenHunger < 30) hungerFill.style.background = '#e74c3c';
-    else hungerFill.style.background = 'linear-gradient(90deg,#e74c3c,#f39c12)';
+    hungerFill.style.background = state.queenHunger < 30 ? '#e74c3c' : 'linear-gradient(90deg,#e74c3c,#f39c12)';
 }
 
 function updateActionPrompt() {
@@ -1228,7 +1368,7 @@ function updateActionPrompt() {
     let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - ant.x, e.y - ant.y) < TILE_SIZE * 1.5);
     let prey = state.flies.find(f => Math.hypot(f.x - ant.x, f.y - ant.y) < TILE_SIZE * 1.3);
     let queen = state.entities.find(e => e.type === 'queen');
-    let onQueen = queen && Math.hypot(ant.x - queen.x, ant.y - queen.y) < TILE_SIZE * 1.1;
+    let onQueen = queen && Math.hypot(ant.x - queen.x, ant.y - queen.y) < TILE_SIZE * 1.2;
     let broodHere = state.brood.find(b => !b.carriedBy && b.x === ant.gx && b.y === ant.gy);
     let itemHere = state.surfaceItems.find(i => i.x === ant.gx && i.y === ant.gy);
     let larvaHere = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === ant.gx && b.y === ant.gy);
@@ -1237,6 +1377,7 @@ function updateActionPrompt() {
     else if (prey && ant.state === 'IDLE') msg = "SPACE: Attack prey (hunt for meat)";
     else if (ant.state === 'CARRYING_DIRT') msg = "SPACE: Place wall";
     else if (ant.state === 'CARRYING_RESOURCE' && onQueen) msg = "SPACE: Feed the Queen";
+    else if (ant.state === 'CARRYING_RESOURCE' && larvaHere) msg = "SPACE: Feed larva";
     else if (ant.state === 'CARRYING_RESOURCE') msg = "SPACE: Drop resource";
     else if (ant.state === 'CARRYING_BROOD') msg = "SPACE: Set down brood";
     else if (larvaHere && itemHere) msg = "SPACE: Feed larva";
@@ -1246,6 +1387,13 @@ function updateActionPrompt() {
 
     if (msg) { el.textContent = msg; el.style.display = 'block'; }
     else el.style.display = 'none';
+}
+
+function updateCompass() {
+    let ref = state.controlledAnt || state.entities.find(e => e.type === 'queen');
+    if (!ref) return;
+    document.getElementById('compass').textContent =
+        `📍 ${Math.round(ref.x / TILE_SIZE)}, ${Math.round(ref.y / TILE_SIZE)} · Wave ${state.wave}`;
 }
 
 /**
@@ -1275,14 +1423,8 @@ function update() {
             triggerShake(ant.type === 'queen' ? 15 : 4);
             state.splats.push({ x: ant.x, y: ant.y, size: Math.random() * 15 + 10 });
 
-            // If this ant was carrying brood, drop it on the ground
-            if (ant.carriedBrood) {
-                ant.carriedBrood.carriedBy = null;
-                ant.carriedBrood.x = ant.gx; ant.carriedBrood.y = ant.gy;
-            }
-            if (ant.carriedResource) {
-                state.surfaceItems.push({ type: ant.carriedResource, x: ant.gx, y: ant.gy });
-            }
+            if (ant.carriedBrood) { ant.carriedBrood.carriedBy = null; ant.carriedBrood.x = ant.gx; ant.carriedBrood.y = ant.gy; }
+            if (ant.carriedResource) state.surfaceItems.push({ type: ant.carriedResource, x: ant.gx, y: ant.gy });
 
             if (ant === state.controlledAnt) {
                 state.controlledAnt = null;
@@ -1292,42 +1434,32 @@ function update() {
                 state.surfaceItems.push({ type: 'meat', x: ant.gx, y: ant.gy });
                 state.jobs.push({ type: 'HARVEST', x: ant.gx, y: ant.gy, resourceType: 'meat', assigned: false });
             }
-            if (ant.type === 'queen') {
-                toast('💀 The Queen has died. No more eggs will be laid.');
-            }
+            if (ant.type === 'queen') toast('💀 The Queen has died. No more eggs will be laid.');
             return false;
         }
         return true;
     });
 
-    // Prey update
     state.flies.forEach(f => f.update());
-    if (Math.random() < 0.01) spawnPrey();
+    if (Math.random() < 0.012) spawnPrey();
 
     state.pheromones = state.pheromones.filter(p => (state.time - p.birthTime) < 500);
-
     state.particles.forEach(p => p.update());
     state.particles = state.particles.filter(p => p.life > 0);
     state.floatingTexts.forEach(t => t.update());
     state.floatingTexts = state.floatingTexts.filter(t => t.life > 0);
 
-    // Seed respawn every 15s
     state.seedRespawnTimer--;
     if (state.seedRespawnTimer <= 0) { respawnSeeds(); state.seedRespawnTimer = 900; }
 
-    // Queen hunger drains over time; starving queen stops laying eggs and can eventually die
     let queen = state.entities.find(e => e.type === 'queen');
     if (queen) {
         state.queenHunger -= state.queenHungerDrain;
-        if (state.queenHunger <= 0) {
-            state.queenHunger = 0;
-            queen.hp -= 0.03; // slow starvation damage
-        }
-        // Egg laying — only if queen is fed enough
+        if (state.queenHunger <= 0) { state.queenHunger = 0; queen.hp -= 0.03; }
         if (state.queenHunger > 25) {
             state.nextEggTimer--;
             if (state.nextEggTimer <= 0) {
-                layEgg();
+                layEgg('minor');
                 state.nextEggTimer = 600 + Math.floor(Math.random() * 300);
             }
         }
@@ -1340,7 +1472,7 @@ function update() {
     if (state.shake > 0) { state.shake *= 0.9; if (state.shake < 0.5) state.shake = 0; }
 
     updateActionPrompt();
-    if (Math.floor(state.time * 100) % 20 === 0) updateUI();
+    if (Math.floor(state.time * 100) % 20 === 0) { updateUI(); updateCompass(); }
 }
 
 function draw() {
@@ -1353,31 +1485,59 @@ function draw() {
     ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-canvas.width / 2 - camera.x, -canvas.height / 2 - camera.y);
 
-    // Sky gradient for a touch more atmosphere
-    let skyGrad = ctx.createLinearGradient(0, 0, 0, SURFACE_Y * TILE_SIZE);
+    // Visible world bounds in tiles, generously padded
+    const viewLeft = camera.x - 4, viewRight = camera.x + canvas.width / camera.zoom + 4;
+    const viewTop = camera.y - 4, viewBottom = camera.y + canvas.height / camera.zoom + 4;
+    const gxMin = Math.floor(viewLeft / TILE_SIZE), gxMax = Math.ceil(viewRight / TILE_SIZE);
+    const gyMin = Math.floor(viewTop / TILE_SIZE), gyMax = Math.ceil(viewBottom / TILE_SIZE);
+
+    // Sky background across the visible strip above ground
+    let skyGrad = ctx.createLinearGradient(0, gyMin * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE + 40);
     skyGrad.addColorStop(0, '#B8CB5A');
     skyGrad.addColorStop(1, '#8fa63e');
-    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, COLS * TILE_SIZE, SURFACE_Y * TILE_SIZE);
-    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, SURFACE_Y * TILE_SIZE, COLS * TILE_SIZE, ROWS * TILE_SIZE);
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE + 40 - gyMin * TILE_SIZE));
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(gxMin * TILE_SIZE, SURFACE_Y * TILE_SIZE, (gxMax - gxMin) * TILE_SIZE, (gyMax - gyMin) * TILE_SIZE);
 
-    for (let y = SURFACE_Y; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-            if (state.grid[y] && state.grid[y][x] === 1) {
+    // Tiles (dirt / rock)
+    for (let gy = gyMin; gy <= gyMax; gy++) {
+        for (let gx = gxMin; gx <= gxMax; gx++) {
+            const t = getTile(gx, gy);
+            if (t === 1) {
                 if (ASSETS.dirt_tile.loaded) {
-                    ctx.drawImage(ASSETS.dirt_tile.img, x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.drawImage(ASSETS.dirt_tile.img, gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 } else {
                     ctx.fillStyle = ASSETS.dirt_tile.fallback;
-                    ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-                    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.fillRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.strokeRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 }
+            } else if (t === 2) {
+                ctx.fillStyle = '#3a3a42';
+                ctx.beginPath(); ctx.arc(gx * TILE_SIZE + 20, gy * TILE_SIZE + 20, 19, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#55555f';
+                ctx.beginPath(); ctx.arc(gx * TILE_SIZE + 14, gy * TILE_SIZE + 14, 6, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+    }
+
+    // Decorations (surface only, drawn from chunk decoration lists that intersect the view)
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE) - 1, cxMax = Math.floor(gxMax / CHUNK_SIZE) + 1;
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE) - 1, cyMax = Math.floor(gyMax / CHUNK_SIZE) + 1;
+    for (let ccy = cyMin; ccy <= cyMax; ccy++) {
+        for (let ccx = cxMin; ccx <= cxMax; ccx++) {
+            ensureChunk(ccx, ccy);
+            const decos = decorations.get(chunkKey(ccx, ccy));
+            if (!decos) continue;
+            for (const d of decos) {
+                if (d.x < gxMin - 1 || d.x > gxMax + 1 || d.y < gyMin - 1 || d.y > gyMax + 1) continue;
+                drawDecoration(d);
             }
         }
     }
 
     ctx.fillStyle = 'rgba(150, 0, 0, 0.6)';
-    state.splats.forEach(s => {
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill();
-    });
+    state.splats.forEach(s => { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill(); });
 
     ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
     state.jobs.forEach(job => { if (job.type === 'DIG') ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); });
@@ -1397,12 +1557,10 @@ function draw() {
     state.surfaceItems.forEach(item => {
         ctx.fillStyle = item.type === 'seed' ? `rgba(241, 196, 15, 0.3)` : `rgba(231, 76, 60, 0.3)`;
         ctx.beginPath(); ctx.arc(item.x * TILE_SIZE + TILE_SIZE / 2, item.y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 2 + pulse, 0, Math.PI * 2); ctx.fill();
-
         ctx.fillStyle = item.type === 'seed' ? '#f1c40f' : '#e74c3c';
         ctx.beginPath(); ctx.arc(item.x * TILE_SIZE + TILE_SIZE / 2, item.y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 3, 0, Math.PI * 2); ctx.fill();
     });
 
-    // Brood on the ground (not carried)
     state.brood.forEach(b => {
         if (b.carriedBy) return;
         let bx = b.x * TILE_SIZE + TILE_SIZE / 2, by = b.y * TILE_SIZE + TILE_SIZE / 2;
@@ -1424,12 +1582,42 @@ function draw() {
     requestAnimationFrame(() => { update(); draw(); });
 }
 
+function drawDecoration(d) {
+    const px = d.x * TILE_SIZE + TILE_SIZE / 2, py = d.y * TILE_SIZE + TILE_SIZE / 2;
+    if (d.type === 'grass') {
+        ctx.strokeStyle = '#4e7a2e'; ctx.lineWidth = 2;
+        for (let i = -1; i <= 1; i++) {
+            ctx.beginPath(); ctx.moveTo(px + i * 5, py + 6);
+            ctx.lineTo(px + i * 5 + Math.sin(state.time + i) * 3, py - 10);
+            ctx.stroke();
+        }
+    } else if (d.type === 'pebble') {
+        ctx.fillStyle = '#8a8a82';
+        ctx.beginPath(); ctx.ellipse(px, py + 6, 7, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#a5a59c';
+        ctx.beginPath(); ctx.ellipse(px - 2, py + 4, 3, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (d.type === 'mushroom') {
+        ctx.fillStyle = '#e8e4d5'; ctx.fillRect(px - 1.5, py, 3, 8);
+        ctx.fillStyle = '#c0392b';
+        ctx.beginPath(); ctx.ellipse(px, py, 7, 5, 0, Math.PI, Math.PI * 2); ctx.fill();
+    } else if (d.type === 'bank_marker') {
+        // A distinctive exposed dirt-bank outcrop — a visual hint of a good new nest site
+        ctx.fillStyle = 'rgba(139, 90, 43, 0.5)';
+        ctx.beginPath(); ctx.arc(px, py - 4, 22, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#d4a574'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.arc(px, py - 4, 22, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+    } else if (d.type === 'bg_rock') {
+        ctx.fillStyle = 'rgba(60,60,68,0.5)';
+        ctx.beginPath(); ctx.arc(px, py, 14, 0, Math.PI * 2); ctx.fill();
+    }
+}
+
 // Start Game
 initMap();
-let centerX = Math.floor(COLS / 2);
-state.entities.push(new Ant('queen', centerX * TILE_SIZE + 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
-for (let i = 0; i < 8; i++) state.entities.push(new Ant('minor', centerX * TILE_SIZE + 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
-for (let i = 0; i < 3; i++) spawnPrey();
+state.entities.push(new Ant('queen', 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
+for (let i = 0; i < 8; i++) state.entities.push(new Ant('minor', 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
+for (let i = 0; i < 5; i++) spawnPrey();
 updateUI();
 draw();
 </script>
