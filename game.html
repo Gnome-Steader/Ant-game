@@ -158,6 +158,13 @@
 
 <script>
 /**
+ * ==========================================
+ * FPS SETTING - CHANGE THIS TO REDUCE LAG
+ * ==========================================
+ */
+let TARGET_FPS = 60; // Change to 30 or 45 if the game is lagging on your device
+
+/**
  * ENGINE & CAMERA SETUP
  */
 const canvas = document.getElementById('gameCanvas');
@@ -169,6 +176,7 @@ const CHUNK_SIZE = 16;
 const camera = { x: 0, y: 0, zoom: 1.2 };
 const keys = { w: false, a: false, s: false, d: false, arrowup: false, arrowdown: false, arrowleft: false, arrowright: false, ' ': false };
 let spacePressed = false;
+let pathfindsThisFrame = 0; // Global pathfinding quota to prevent lag
 
 window.addEventListener('keydown', e => {
     let k = e.key.toLowerCase();
@@ -192,11 +200,16 @@ function resize() { canvas.width = window.innerWidth; canvas.height = window.inn
 window.addEventListener('resize', resize);
 resize();
 
+function distSq(x1, y1, x2, y2) {
+    return (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+}
+
 /**
- * INFINITE WORLD (chunked, procedurally generated, sparse)
+ * INFINITE WORLD
  */
 const chunks = new Map(); 
 const decorations = new Map(); 
+const surfaceCache = new Map(); 
 
 function chunkKey(cx, cy) { return cx + ',' + cy; }
 
@@ -206,10 +219,12 @@ function hash2(x, y) {
 }
 
 function surfaceHeightAt(gx) {
-    // Gently undulating surface line + larger rolling hills for distinct dirt banks
+    if (surfaceCache.has(gx)) return surfaceCache.get(gx);
     let base = SURFACE_Y + Math.round(Math.sin(gx * 0.07) * 2 + Math.sin(gx * 0.021) * 3);
     let hill = Math.round(Math.sin(gx * 0.004) * 12); 
-    return base + hill;
+    let val = base + hill;
+    surfaceCache.set(gx, val);
+    return val;
 }
 
 function generateChunk(cx, cy) {
@@ -243,7 +258,6 @@ function generateChunk(cx, cy) {
             else if (r > 0.74) decos.push({ type: 'pebble', x: gx, y: surf - 1 });
             else if (r > 0.71) decos.push({ type: 'mushroom', x: gx, y: surf - 1 });
             
-            // Spawn natural seeds in the world during generation
             if (hash2(gx * 4.1, 88.8) > 0.95) {
                 state.surfaceItems.push({ type: 'seed', x: gx, y: surf - 1 });
                 state.jobs.push({ type: 'HARVEST', x: gx, y: surf - 1, resourceType: 'seed', assigned: false });
@@ -361,6 +375,7 @@ class FloatingText {
 }
 function spawnParticles(x, y, color, count = 5, speed = 4, size = null, gravity = 0) {
     for (let i = 0; i < count; i++) state.particles.push(new Particle(x, y, color, speed, size, gravity));
+    if (state.particles.length > 200) state.particles.splice(0, state.particles.length - 200);
 }
 function spawnText(x, y, text, color, size) { state.floatingTexts.push(new FloatingText(x, y, text, color, size)); }
 function triggerShake(intensity) { state.shake = Math.max(state.shake, intensity); }
@@ -429,7 +444,8 @@ function findPath(startX, startY, endX, endY, isEnemy = false, maxRadius = 40) {
     let closedSet = new Set();
     let iterations = 0;
 
-    while (openSet.length > 0 && iterations < 2500) {
+    // Reduced max iterations from 2500 to 400 to prevent massive lag spikes
+    while (openSet.length > 0 && iterations < 400) {
         iterations++;
         openSet.sort((a, b) => a.f - b.f);
         let current = openSet.shift();
@@ -492,7 +508,7 @@ class Prey {
     }
     update() {
         if (this.flash > 0) this.flash--;
-        let threat = state.entities.find(e => e.type !== 'army_ant' && e.type !== 'queen' && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 2.5);
+        let threat = state.entities.find(e => e.type !== 'army_ant' && e.type !== 'queen' && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 2.5)**2);
         if (threat) {
             this.fleeing = true;
             let angle = Math.atan2(this.y - threat.y, this.x - threat.x);
@@ -531,7 +547,6 @@ class Prey {
 
 function spawnPrey() {
     if (state.flies.length >= 25) return;
-    // Spawn around the camera so exploration reveals bugs
     let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
     let gx = originX + Math.floor((Math.random() - 0.5) * 160);
     let surf = surfaceHeightAt(gx);
@@ -544,6 +559,7 @@ class Ant {
         this.type = type; this.x = x; this.y = y;
         this.gx = Math.floor(x / TILE_SIZE); this.gy = Math.floor(y / TILE_SIZE);
         this.state = 'IDLE'; this.path = []; this.job = null;
+        this.pathTimer = 0; 
 
         this.maxHp = STATS[type].hp; this.hp = this.maxHp;
         this.dmg = STATS[type].dmg; this.baseSpeed = STATS[type].speed; this.speed = this.baseSpeed;
@@ -561,6 +577,7 @@ class Ant {
         if (this.flash > 0) this.flash--;
         if (this.underAttack > 0) this.underAttack--;
         if (this.alertTimer > 0) this.alertTimer--;
+        if (this.pathTimer > 0) this.pathTimer--;
         this.speed = (this.state === 'DEFENDING') ? 0 : this.baseSpeed;
 
         if (state.controlledAnt === this) {
@@ -582,7 +599,7 @@ class Ant {
         }
 
         if (this.attackTimer > 0) this.attackTimer--;
-        let target = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.2);
+        let target = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2)**2);
         if (target) {
             if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING' || this.state === 'FEEDING_LARVA') {
                 if (this.job) { this.job.assigned = false; this.job = null; }
@@ -611,7 +628,7 @@ class Ant {
             let target = this.path[0];
             let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
-            let dist = Math.hypot(dx, dy);
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
 
             if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
             else {
@@ -630,7 +647,7 @@ class Ant {
     updateArmyAntAI() {
         if (this.attackTimer > 0) this.attackTimer--;
 
-        let target = state.entities.find(e => e.type !== 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.2);
+        let target = state.entities.find(e => e.type !== 'army_ant' && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2)**2);
         if (target) {
             this.path = [];
             this.angle = Math.atan2(target.y - this.y, target.x - this.x);
@@ -652,12 +669,12 @@ class Ant {
         let nearestBrood = null, nearestBroodDist = Infinity;
         for (let b of state.brood) {
             if (b.carriedBy) continue;
-            let d = Math.hypot(b.x * TILE_SIZE + 20 - this.x, b.y * TILE_SIZE + 20 - this.y);
+            let d = distSq(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, this.x, this.y);
             if (d < nearestBroodDist) { nearestBroodDist = d; nearestBrood = b; }
         }
         let queen = state.entities.find(e => e.type === 'queen');
 
-        if (nearestBrood && nearestBroodDist < TILE_SIZE * 0.7) {
+        if (nearestBrood && nearestBroodDist < (TILE_SIZE * 0.7)**2) {
             let bx = nearestBrood.x * TILE_SIZE + 20, by = nearestBrood.y * TILE_SIZE + 20;
             state.brood = state.brood.filter(b => b !== nearestBrood);
             spawnParticles(bx, by, '#7fd3ff', 10, 5);
@@ -669,7 +686,7 @@ class Ant {
 
         let chaseTarget = null;
         if (nearestBrood && queen) {
-            chaseTarget = (nearestBroodDist < Math.hypot(queen.x - this.x, queen.y - this.y)) ?
+            chaseTarget = (nearestBroodDist < distSq(queen.x, queen.y, this.x, this.y)) ?
                 { gx: nearestBrood.x, gy: nearestBrood.y } : { gx: queen.gx, gy: queen.gy };
         } else if (nearestBrood) {
             chaseTarget = { gx: nearestBrood.x, gy: nearestBrood.y };
@@ -678,8 +695,12 @@ class Ant {
         }
 
         if (chaseTarget) {
-            if (this.path.length === 0 || Math.random() < 0.08) {
-                this.path = findPath(this.gx, this.gy, chaseTarget.gx, chaseTarget.gy, true) || [];
+            if (this.path.length === 0 && this.pathTimer <= 0) {
+                if (pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, chaseTarget.gx, chaseTarget.gy, true) || [];
+                    this.pathTimer = 15 + Math.floor(Math.random() * 10);
+                }
             }
         }
 
@@ -687,7 +708,7 @@ class Ant {
             let t = this.path[0];
             let tx = t.x * TILE_SIZE + TILE_SIZE / 2, ty = t.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
-            let dist = Math.hypot(dx, dy);
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
             if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
             else {
                 this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed;
@@ -705,16 +726,20 @@ class Ant {
     }
 
     updateQueenAI() {
-        if (Math.random() < 0.003 && this.path.length === 0) {
-            let nx = this.gx + Math.floor(Math.random() * 4) - 2;
-            let ny = this.gy + Math.floor(Math.random() * 4) - 2;
-            if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+        if (this.path.length === 0 && this.pathTimer <= 0 && Math.random() < 0.05) {
+            if (pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
+                let nx = this.gx + Math.floor(Math.random() * 4) - 2;
+                let ny = this.gy + Math.floor(Math.random() * 4) - 2;
+                if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                this.pathTimer = 30;
+            }
         }
         if (this.path.length > 0) {
             let target = this.path[0];
             let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
             let dx = tx - this.x, dy = ty - this.y;
-            let dist = Math.hypot(dx, dy);
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
             if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
             else { this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed; this.angle = Math.atan2(dy, dx); }
         }
@@ -723,7 +748,7 @@ class Ant {
     handlePlayerControl() {
         let moveSpeedMult = this.type === 'queen' ? 1.0 : 1.5;
         let dx = 0, dy = 0;
-        let currentSpeed = this.baseSpeed; // Use base speed to calculate intent so we can break out of plug mode
+        let currentSpeed = this.baseSpeed; 
 
         if (keys.arrowup) dy -= currentSpeed * moveSpeedMult;
         if (keys.arrowdown) dy += currentSpeed * moveSpeedMult;
@@ -731,7 +756,7 @@ class Ant {
         if (keys.arrowright) dx += currentSpeed * moveSpeedMult;
 
         if (dx !== 0 || dy !== 0) {
-            if (this.state === 'DEFENDING') this.state = 'IDLE'; // Break out of plug mode automatically
+            if (this.state === 'DEFENDING') this.state = 'IDLE'; 
             this.x += dx; this.y += dy;
             this.angle = Math.atan2(dy, dx);
             this.wobble += 0.5;
@@ -747,7 +772,7 @@ class Ant {
     performManualAction() {
         if (this.type === 'queen') return;
 
-        let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - this.x, e.y - this.y) < TILE_SIZE * 1.5);
+        let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.5)**2);
         if (enemy) {
             enemy.hp -= this.dmg; enemy.flash = 10; enemy.underAttack = 300;
             spawnParticles(enemy.x, enemy.y, '#ff0000', 8, 6);
@@ -759,7 +784,7 @@ class Ant {
             return;
         }
 
-        let prey = state.flies.find(f => Math.hypot(f.x - this.x, f.y - this.y) < TILE_SIZE * 1.3);
+        let prey = state.flies.find(f => distSq(f.x, f.y, this.x, this.y) < (TILE_SIZE * 1.3)**2);
         if (prey && !this.carriedResource && !this.carriedBrood) {
             prey.hp -= this.dmg * 2;
             prey.flash = 10;
@@ -791,7 +816,7 @@ class Ant {
 
         if (this.state === 'CARRYING_RESOURCE') {
             let queen = state.entities.find(e => e.type === 'queen');
-            if (queen && Math.hypot(this.x - queen.x, this.y - queen.y) < TILE_SIZE * 1.2) {
+            if (queen && distSq(this.x, this.y, queen.x, queen.y) < (TILE_SIZE * 1.2)**2) {
                 state.queenHunger = Math.min(100, state.queenHunger + 35);
                 spawnParticles(queen.x, queen.y - 10, this.carriedResource === 'seed' ? '#f1c40f' : '#e74c3c', 12, 5);
                 spawnText(queen.x, queen.y - 25, "Queen Fed!", "#7fd3ff");
@@ -880,28 +905,40 @@ class Ant {
         if (state.postBattleTimer > 0) {
             if (this.gy >= SURFACE_Y) {
                 let queen = state.entities.find(e => e.type === 'queen');
-                if (queen && (this.path.length === 0 || Math.random() < 0.02)) {
-                    this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                if (queen && this.pathTimer <= 0 && (this.path.length === 0 || Math.random() < 0.02)) {
+                    if (pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                        this.pathTimer = 30;
+                    }
                 }
-            } else if (this.path.length === 0 && Math.random() < 0.05) {
-                let nx = this.gx + Math.floor(Math.random() * 10) - 5;
-                let ny = Math.max(0, Math.min(SURFACE_Y - 2, this.gy + Math.floor(Math.random() * 6) - 3));
-                if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && Math.random() < 0.05) {
+                if (pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    let nx = this.gx + Math.floor(Math.random() * 10) - 5;
+                    let ny = Math.max(0, Math.min(SURFACE_Y - 2, this.gy + Math.floor(Math.random() * 6) - 3));
+                    if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                    this.pathTimer = 30;
+                }
             }
             return;
         }
 
         let distressAnt = state.entities.find(e => e.underAttack > 0 && e.type !== 'army_ant' && e !== this);
         if (distressAnt) {
-            let dist = Math.hypot(this.x - distressAnt.x, this.y - distressAnt.y);
-            if (dist < TILE_SIZE * 8) {
+            let dist = distSq(this.x, this.y, distressAnt.x, distressAnt.y);
+            if (dist < (TILE_SIZE * 8)**2) {
                 let shouldHelp = (distressAnt.type === 'queen') || (this.type === 'major') || (this.type === 'super_major' && distressAnt.gy >= SURFACE_Y);
                 if (shouldHelp) {
                     if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING' || this.state === 'FEEDING_LARVA') {
                         if (this.job) { this.job.assigned = false; this.job = null; }
                         this.state = 'IDLE';
                     }
-                    this.path = findPath(this.gx, this.gy, distressAnt.gx, distressAnt.gy) || [];
+                    if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        this.path = findPath(this.gx, this.gy, distressAnt.gx, distressAnt.gy) || [];
+                        this.pathTimer = 20;
+                    }
                     this.alertTimer = 60;
                     return;
                 }
@@ -918,14 +955,18 @@ class Ant {
                 }
             }
 
-            if (!this.job && (this.type === 'minor' || this.type === 'major') && state.flies.length > 0 && Math.random() < 0.02) {
+            if (!this.job && (this.type === 'minor' || this.type === 'major') && state.flies.length > 0 && Math.random() < 0.05) {
                 let huntedIds = state.entities.filter(e => e.huntTargetId).map(e => e.huntTargetId);
-                let prey = state.flies.find(f => !huntedIds.includes(f.id) && Math.hypot(f.x - this.x, f.y - this.y) < TILE_SIZE * 14);
+                let prey = state.flies.find(f => !huntedIds.includes(f.id) && distSq(f.x, f.y, this.x, this.y) < (TILE_SIZE * 14)**2);
                 if (prey) {
                     if (!prey.id) prey.id = Math.random().toString(36).slice(2);
                     this.huntTargetId = prey.id;
                     this.state = 'HUNTING';
-                    this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                    if (pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                        this.pathTimer = 20;
+                    }
                     return;
                 }
             }
@@ -939,29 +980,37 @@ class Ant {
                 if (job) this.assignJob(job);
             }
 
-            if (this.type === 'super_major' && workersAlive && Math.random() < 0.005) {
+            if (this.type === 'super_major' && workersAlive && this.pathTimer <= 0 && Math.random() < 0.05) {
                 let targetX = this.gx + Math.floor(Math.random() * 20) - 10;
                 let targetY = this.gy + Math.floor(Math.random() * 10) - 5;
-                if (!isWall(targetX, targetY)) this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
+                if (!isWall(targetX, targetY) && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
+                    this.pathTimer = 40;
+                }
             }
 
-            if (!this.job && this.type !== 'super_major') {
+            if (!this.job && this.type !== 'super_major' && this.pathTimer <= 0) {
                 if (this.gy < SURFACE_Y) {
-                    if (Math.random() < 0.05) {
+                    if (Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
                         let queen = state.entities.find(e => e.type === 'queen');
                         if (queen) this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                        this.pathTimer = 30;
                     }
-                } else if (Math.random() < 0.02) {
+                } else if (Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
                     let nx = this.gx + Math.floor(Math.random() * 5) - 2;
                     let ny = this.gy + Math.floor(Math.random() * 5) - 2;
                     if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                    this.pathTimer = 30;
                 }
             }
         } else if (this.state === 'HUNTING') {
             let prey = state.flies.find(f => f.id === this.huntTargetId);
             if (!prey) { this.state = 'IDLE'; this.huntTargetId = null; return; }
-            let dist = Math.hypot(prey.x - this.x, prey.y - this.y);
-            if (dist < TILE_SIZE * 1.2) {
+            let dist = distSq(prey.x, prey.y, this.x, this.y);
+            if (dist < (TILE_SIZE * 1.2)**2) {
                 prey.hp -= this.dmg * 1.5;
                 prey.flash = 8;
                 spawnParticles(prey.x, prey.y, '#aa3333', 4, 4);
@@ -973,12 +1022,14 @@ class Ant {
                     state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
                     this.state = 'IDLE'; this.huntTargetId = null;
                 }
-            } else if (Math.random() < 0.1) {
+            } else if (this.pathTimer <= 0 && Math.random() < 0.2 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
                 this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                this.pathTimer = 15;
                 if (this.path.length === 0) { this.state = 'IDLE'; this.huntTargetId = null; }
             }
         } else if (this.state === 'MOVING_TO_JOB') {
-            if (Math.hypot(this.gx - this.job.x, this.gy - this.job.y) <= 1) {
+            if (Math.sqrt(distSq(this.gx, this.gy, this.job.x, this.job.y)) <= 1) {
                 if (this.job.type === 'DIG') { this.state = 'DIGGING'; this.digTimer = 20; }
                 else if (this.job.type === 'HARVEST') { this.state = 'HARVESTING'; this.digTimer = 10; }
                 else if (this.job.type === 'FEED_LARVA') { this.state = 'FEEDING_LARVA'; this.digTimer = 15; }
@@ -994,14 +1045,19 @@ class Ant {
                 state.jobs = state.jobs.filter(j => j !== this.job);
                 this.job = null; this.state = 'CARRYING_DIRT';
                 let queen = state.entities.find(e => e.type === 'queen');
-                this.path = queen ? (findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || []) : [];
+                if (queen && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || [];
+                } else { this.path = []; }
             }
         } else if (this.state === 'CARRYING_DIRT') {
             if (this.gy < SURFACE_Y) {
                 this.state = 'IDLE'; spawnParticles(this.x, this.y, '#8b5a2b', 8);
-            } else if (this.path.length === 0) {
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
                 let queen = state.entities.find(e => e.type === 'queen');
                 this.path = queen ? (findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || []) : [];
+                this.pathTimer = 30;
             }
         } else if (this.state === 'HARVESTING') {
             this.digTimer--;
@@ -1014,7 +1070,10 @@ class Ant {
                 spawnParticles(this.x, this.y, this.carriedResource === 'seed' ? '#f1c40f' : '#e74c3c', 10);
                 this.job = null; this.state = 'CARRYING_RESOURCE';
                 let queen = state.entities.find(e => e.type === 'queen');
-                if (queen) this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                if (queen && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                }
             }
         } else if (this.state === 'FEEDING_LARVA') {
             this.digTimer--;
@@ -1034,13 +1093,15 @@ class Ant {
         } else if (this.state === 'CARRYING_RESOURCE') {
             let queen = state.entities.find(e => e.type === 'queen');
             if (!queen) { this.state = 'IDLE'; this.carriedResource = null; return; }
-            if (Math.hypot(this.x - queen.x, this.y - queen.y) < TILE_SIZE * 1.2) {
+            if (distSq(this.x, this.y, queen.x, queen.y) < (TILE_SIZE * 1.2)**2) {
                 if (this.carriedResource === 'seed') { state.resources.seeds++; spawnText(this.x, this.y - 20, "+1 Seed", "#f1c40f"); }
                 if (this.carriedResource === 'meat') { state.resources.meat++; spawnText(this.x, this.y - 20, "+1 Meat", "#e74c3c"); }
                 updateUI();
                 this.carriedResource = null; this.state = 'IDLE';
-            } else if (this.path.length === 0) {
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
                 this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                this.pathTimer = 30;
             }
         } else if (this.state === 'CARRYING_BROOD') {
             this.state = 'IDLE';
@@ -1048,6 +1109,8 @@ class Ant {
     }
 
     assignJob(job) {
+        if (this.pathTimer > 0 || pathfindsThisFrame >= 2) return; 
+        
         job.assigned = true; this.job = job;
         let targetX = job.x, targetY = job.y;
         if (job.type === 'DIG') {
@@ -1057,9 +1120,21 @@ class Ant {
             ].find(n => !isWall(n.x, n.y));
             if (adj) { targetX = adj.x; targetY = adj.y; }
         }
+        
+        pathfindsThisFrame++;
         this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
-        if (this.path.length > 0 || (this.gx === targetX && this.gy === targetY)) this.state = 'MOVING_TO_JOB';
-        else { job.assigned = false; this.job = null; }
+        this.pathTimer = 15; 
+        
+        if (this.path.length > 0 || (this.gx === targetX && this.gy === targetY)) {
+            this.state = 'MOVING_TO_JOB';
+        } else {
+            job.assigned = false; 
+            this.job = null;
+            job.failCount = (job.failCount || 0) + 1;
+            if (job.failCount > 3) {
+                state.jobs = state.jobs.filter(j => j !== job);
+            }
+        }
     }
 
     draw() {
@@ -1225,7 +1300,6 @@ function triggerRaid() {
     triggerShake(20);
     toast('⚠️ Wave ' + state.wave + ': Army ants are charging your brood!');
 
-    // Exponentially larger waves each time to force max speed colony growth
     let antCount = Math.round(5 + Math.pow(state.wave, 1.8) * 2);
     let queen = state.entities.find(e => e.type === 'queen');
     let originGx = queen ? queen.gx : 0, originGy = queen ? queen.gy : SURFACE_Y;
@@ -1273,7 +1347,7 @@ function handleInput(e) {
     const { cx, cy, gx, gy } = getWorldPos(e);
 
     if (state.activeTool === 'pointer' && e.type === 'mousedown') {
-        let clickedAnt = state.entities.find(ant => Math.hypot(ant.x - cx, ant.y - cy) < TILE_SIZE);
+        let clickedAnt = state.entities.find(ant => distSq(ant.x, ant.y, cx, cy) < TILE_SIZE*TILE_SIZE);
 
         if (clickedAnt && clickedAnt.type !== 'army_ant') {
             state.controlledAnt = clickedAnt;
@@ -1352,10 +1426,10 @@ function updateActionPrompt() {
     if (ant.type === 'queen') { el.style.display = 'none'; return; }
 
     let msg = null;
-    let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && Math.hypot(e.x - ant.x, e.y - ant.y) < TILE_SIZE * 1.5);
-    let prey = state.flies.find(f => Math.hypot(f.x - ant.x, f.y - ant.y) < TILE_SIZE * 1.3);
+    let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && distSq(e.x, e.y, ant.x, ant.y) < (TILE_SIZE * 1.5)**2);
+    let prey = state.flies.find(f => distSq(f.x, f.y, ant.x, ant.y) < (TILE_SIZE * 1.3)**2);
     let queen = state.entities.find(e => e.type === 'queen');
-    let onQueen = queen && Math.hypot(ant.x - queen.x, ant.y - queen.y) < TILE_SIZE * 1.2;
+    let onQueen = queen && distSq(ant.x, ant.y, queen.x, queen.y) < (TILE_SIZE * 1.2)**2;
     let broodHere = state.brood.find(b => !b.carriedBy && b.x === ant.gx && b.y === ant.gy);
     let itemHere = state.surfaceItems.find(i => i.x === ant.gx && i.y === ant.gy);
     let larvaHere = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === ant.gx && b.y === ant.gy);
@@ -1388,6 +1462,7 @@ function updateCompass() {
  */
 function update() {
     state.time += 0.05;
+    pathfindsThisFrame = 0; // Reset pathfinding quota every frame
 
     if (state.controlledAnt) {
         let targetCamX = state.controlledAnt.x - (canvas.width / 2) / camera.zoom;
@@ -1402,13 +1477,32 @@ function update() {
         if (keys.d) camera.x += camSpeed;
     }
 
+    // Pre-generate chunks for the visible area during update so draw() doesn't stutter
+    const gxMin = Math.floor((camera.x - TILE_SIZE*3) / TILE_SIZE);
+    const gxMax = Math.ceil((camera.x + canvas.width / camera.zoom + TILE_SIZE*3) / TILE_SIZE);
+    const gyMin = Math.floor((camera.y - TILE_SIZE*3) / TILE_SIZE);
+    const gyMax = Math.ceil((camera.y + canvas.height / camera.zoom + TILE_SIZE*3) / TILE_SIZE);
+    
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE);
+    const cxMax = Math.floor(gxMax / CHUNK_SIZE);
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE);
+    const cyMax = Math.floor(gyMax / CHUNK_SIZE);
+    
+    for (let ccy = cyMin; ccy <= cyMax; ccy++) {
+        for (let ccx = cxMin; ccx <= cxMax; ccx++) {
+            ensureChunk(ccx, ccy);
+        }
+    }
+
     state.entities.forEach(ant => ant.update());
     state.entities = state.entities.filter(ant => {
         if (ant.hp <= 0) {
             spawnParticles(ant.x, ant.y, '#ff0000', 22, 5, null, 0.05);
             spawnText(ant.x, ant.y, ant.type === 'queen' ? "QUEEN DIED" : "DEAD", "#ff0000", ant.type === 'queen' ? 22 : 16);
             triggerShake(ant.type === 'queen' ? 15 : 4);
+            
             state.splats.push({ x: ant.x, y: ant.y, size: Math.random() * 15 + 10 });
+            if (state.splats.length > 50) state.splats.shift(); // Prevent splat memory leak
 
             if (ant.carriedBrood) { ant.carriedBrood.carriedBy = null; ant.carriedBrood.x = ant.gx; ant.carriedBrood.y = ant.gy; }
             if (ant.carriedResource) state.surfaceItems.push({ type: ant.carriedResource, x: ant.gx, y: ant.gy });
@@ -1468,22 +1562,36 @@ function draw() {
 
     let dx = (Math.random() - 0.5) * state.shake;
     let dy = (Math.random() - 0.5) * state.shake;
-    ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy);
+    
+    // Rounding camera to prevent sub-pixel blurring and edge jitter
+    let camX = Math.round(camera.x);
+    let camY = Math.round(camera.y);
+    
+    ctx.translate(Math.floor(canvas.width / 2 + dx), Math.floor(canvas.height / 2 + dy));
     ctx.scale(camera.zoom, camera.zoom);
-    ctx.translate(-canvas.width / 2 - camera.x, -canvas.height / 2 - camera.y);
+    ctx.translate(-Math.floor(canvas.width / 2 + camX), -Math.floor(canvas.height / 2 + camY));
 
-    const viewLeft = camera.x - 4, viewRight = camera.x + canvas.width / camera.zoom + 4;
-    const viewTop = camera.y - 4, viewBottom = camera.y + canvas.height / camera.zoom + 4;
-    const gxMin = Math.floor(viewLeft / TILE_SIZE), gxMax = Math.ceil(viewRight / TILE_SIZE);
-    const gyMin = Math.floor(viewTop / TILE_SIZE), gyMax = Math.ceil(viewBottom / TILE_SIZE);
+    // Massive padding (3 full tiles) to completely eliminate edge glitching
+    const viewLeft = camera.x - TILE_SIZE * 3;
+    const viewRight = camera.x + canvas.width / camera.zoom + TILE_SIZE * 3;
+    const viewTop = camera.y - TILE_SIZE * 3;
+    const viewBottom = camera.y + canvas.height / camera.zoom + TILE_SIZE * 3;
+    
+    const gxMin = Math.floor(viewLeft / TILE_SIZE);
+    const gxMax = Math.ceil(viewRight / TILE_SIZE);
+    const gyMin = Math.floor(viewTop / TILE_SIZE);
+    const gyMax = Math.ceil(viewBottom / TILE_SIZE);
 
-    let skyGrad = ctx.createLinearGradient(0, gyMin * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE + 40);
+    // Fixed sky gradient so it doesn't jitter when the camera moves
+    let skyGrad = ctx.createLinearGradient(0, (SURFACE_Y - 15) * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE);
     skyGrad.addColorStop(0, '#B8CB5A');
     skyGrad.addColorStop(1, '#8fa63e');
     ctx.fillStyle = skyGrad;
-    ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE + 40 - gyMin * TILE_SIZE));
+    // +1 to width ensures no 1-pixel gaps from float math
+    ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE - gyMin * TILE_SIZE));
+    
     ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(gxMin * TILE_SIZE, SURFACE_Y * TILE_SIZE, (gxMax - gxMin) * TILE_SIZE, (gyMax - gyMin) * TILE_SIZE);
+    ctx.fillRect(gxMin * TILE_SIZE, Math.max(gyMin, SURFACE_Y) * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, (gyMax - gyMin + 1) * TILE_SIZE);
 
     for (let gy = gyMin; gy <= gyMax; gy++) {
         for (let gx = gxMin; gx <= gxMax; gx++) {
@@ -1505,29 +1613,43 @@ function draw() {
         }
     }
 
-    const cxMin = Math.floor(gxMin / CHUNK_SIZE) - 1, cxMax = Math.floor(gxMax / CHUNK_SIZE) + 1;
-    const cyMin = Math.floor(gyMin / CHUNK_SIZE) - 1, cyMax = Math.floor(gyMax / CHUNK_SIZE) + 1;
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE);
+    const cxMax = Math.floor(gxMax / CHUNK_SIZE);
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE);
+    const cyMax = Math.floor(gyMax / CHUNK_SIZE);
+    
     for (let ccy = cyMin; ccy <= cyMax; ccy++) {
         for (let ccx = cxMin; ccx <= cxMax; ccx++) {
-            ensureChunk(ccx, ccy);
             const decos = decorations.get(chunkKey(ccx, ccy));
             if (!decos) continue;
             for (const d of decos) {
-                if (d.x < gxMin - 1 || d.x > gxMax + 1 || d.y < gyMin - 1 || d.y > gyMax + 1) continue;
+                if (d.x < gxMin || d.x > gxMax || d.y < gyMin || d.y > gyMax) continue;
                 drawDecoration(d);
             }
         }
     }
 
+    // Off-screen culling function to save CPU
+    function inView(x, y) {
+        return x >= viewLeft && x <= viewRight && y >= viewTop && y <= viewBottom;
+    }
+
     ctx.fillStyle = 'rgba(150, 0, 0, 0.6)';
-    state.splats.forEach(s => { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill(); });
+    state.splats.forEach(s => { 
+        if (inView(s.x, s.y)) { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill(); }
+    });
 
     ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
-    state.jobs.forEach(job => { if (job.type === 'DIG') ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); });
+    state.jobs.forEach(job => { 
+        if (job.type === 'DIG' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+    });
     ctx.fillStyle = 'rgba(46, 204, 113, 0.25)';
-    state.jobs.forEach(job => { if (job.type === 'FEED_LARVA') ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); });
+    state.jobs.forEach(job => { 
+        if (job.type === 'FEED_LARVA' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+    });
 
     state.pheromones.forEach(p => {
+        if (!inView(p.x, p.y)) return;
         let age = state.time - p.birthTime;
         let alpha = Math.max(0, 1 - (age / 500)) * 0.6;
         ctx.globalAlpha = alpha;
@@ -1538,15 +1660,19 @@ function draw() {
 
     let pulse = Math.abs(Math.sin(state.time)) * 5;
     state.surfaceItems.forEach(item => {
+        let ix = item.x * TILE_SIZE + TILE_SIZE / 2;
+        let iy = item.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(ix, iy)) return;
         ctx.fillStyle = item.type === 'seed' ? `rgba(241, 196, 15, 0.3)` : `rgba(231, 76, 60, 0.3)`;
-        ctx.beginPath(); ctx.arc(item.x * TILE_SIZE + TILE_SIZE / 2, item.y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 2 + pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE / 2 + pulse, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = item.type === 'seed' ? '#f1c40f' : '#e74c3c';
-        ctx.beginPath(); ctx.arc(item.x * TILE_SIZE + TILE_SIZE / 2, item.y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE / 3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE / 3, 0, Math.PI * 2); ctx.fill();
     });
 
     state.brood.forEach(b => {
         if (b.carriedBy) return;
         let bx = b.x * TILE_SIZE + TILE_SIZE / 2, by = b.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(bx, by)) return;
         if (b.needsFood && !b.fed) {
             ctx.globalAlpha = 0.3 + Math.abs(Math.sin(state.time * 3)) * 0.3;
             ctx.fillStyle = '#f39c12';
@@ -1556,13 +1682,12 @@ function draw() {
         drawBroodShape(bx, by, b.stage);
     });
 
-    state.flies.forEach(f => f.draw());
-    state.entities.forEach(ant => ant.draw());
-    state.particles.forEach(p => p.draw());
-    state.floatingTexts.forEach(t => t.draw());
+    state.flies.forEach(f => { if (inView(f.x, f.y)) f.draw(); });
+    state.entities.forEach(ant => { if (inView(ant.x, ant.y)) ant.draw(); });
+    state.particles.forEach(p => { if (inView(p.x, p.y)) p.draw(); });
+    state.floatingTexts.forEach(t => { if (inView(t.x, t.y)) t.draw(); });
 
     ctx.restore();
-    requestAnimationFrame(() => { update(); draw(); });
 }
 
 function drawDecoration(d) {
@@ -1601,7 +1726,21 @@ state.entities.push(new Ant('queen', 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
 for (let i = 0; i < 8; i++) state.entities.push(new Ant('minor', 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
 for (let i = 0; i < 5; i++) spawnPrey();
 updateUI();
-draw();
+
+// FPS Throttled Loop
+let lastTime = 0;
+function loop(timestamp) {
+    requestAnimationFrame(loop);
+    if (!lastTime) lastTime = timestamp;
+    let elapsed = timestamp - lastTime;
+    if (elapsed >= 1000 / TARGET_FPS) {
+        lastTime = timestamp - (elapsed % (1000 / TARGET_FPS));
+        update();
+        draw();
+    }
+}
+requestAnimationFrame(loop);
+
 </script>
 </body>
 </html>
