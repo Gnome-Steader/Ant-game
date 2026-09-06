@@ -1,0 +1,2637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pheidole Rhea — A Colony Survival Field Study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --soil-900:#15120d;
+    --soil-800:#1d1913;
+    --soil-700:#2a231a;
+    --soil-600:#3a3024;
+    --parchment:#f2e9d8;
+    --parchment-dim:#c9bfa9;
+    --clay:#c1793f;
+    --clay-bright:#e0954f;
+    --moss:#7a9a5a;
+    --moss-dim:#5c7644;
+    --brick:#a8453c;
+    --brick-bright:#cf5b4f;
+    --dust-blue:#6f8fa8;
+    --line:rgba(242,233,216,0.14);
+    --line-strong:rgba(242,233,216,0.28);
+    --shadow-deep:0 18px 50px rgba(0,0,0,0.55);
+    --font-display:'Fraunces',Georgia,serif;
+    --font-ui:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{width:100%;height:100%;}
+  body{
+    background:var(--soil-900); color:var(--parchment);
+    font-family:var(--font-ui);
+    overflow:hidden; width:100vw; height:100vh;
+  }
+  button{ font-family:var(--font-ui); }
+  #game-root{ position:relative; width:100%; height:100%; }
+  canvas{ display:block; width:100%; height:100%; image-rendering:pixelated; }
+
+  /* ============ SHARED SCREEN CHROME ============ */
+  .screen{
+    position:absolute; inset:0; display:none;
+    align-items:center; justify-content:center;
+    background:
+      radial-gradient(ellipse 900px 600px at 50% 20%, rgba(193,121,63,0.10), transparent 60%),
+      linear-gradient(180deg, var(--soil-900) 0%, #0f0d09 100%);
+    z-index:50; overflow:auto; padding:40px 20px;
+  }
+  .screen.visible{ display:flex; }
+  .field-texture{
+    position:absolute; inset:0; pointer-events:none; opacity:0.5;
+    background-image:
+      repeating-linear-gradient(90deg, transparent, transparent 79px, rgba(242,233,216,0.02) 80px),
+      repeating-linear-gradient(0deg, transparent, transparent 79px, rgba(242,233,216,0.02) 80px);
+  }
+
+  /* ============ START SCREEN ============ */
+  #start-screen .panel{
+    position:relative; max-width:560px; width:100%; text-align:center;
+  }
+  .eyebrow-mark{
+    display:inline-flex; align-items:center; gap:10px; color:var(--clay-bright);
+    font-size:13px; letter-spacing:0.04em; margin-bottom:18px;
+  }
+  .eyebrow-mark svg{ width:22px; height:22px; }
+  .title-lockup{
+    font-family:var(--font-display); font-weight:500; font-style:italic;
+    font-size:clamp(40px,7vw,64px); line-height:1.05; color:var(--parchment);
+  }
+  .title-lockup .sub{
+    display:block; font-family:var(--font-ui); font-style:normal; font-weight:500;
+    font-size:15px; letter-spacing:0.02em; color:var(--parchment-dim); margin-top:14px;
+  }
+  .title-rule{
+    width:64px; height:2px; background:var(--clay); margin:26px auto; border:none;
+    position:relative;
+  }
+  .title-rule::after{
+    content:''; position:absolute; left:50%; top:50%; width:6px; height:6px;
+    background:var(--clay-bright); border-radius:50%; transform:translate(-50%,-50%) rotate(45deg);
+  }
+  .lede{
+    font-size:15.5px; line-height:1.65; color:var(--parchment-dim); max-width:440px;
+    margin:0 auto 36px; text-wrap:balance;
+  }
+  .menu-stack{ display:flex; flex-direction:column; gap:10px; max-width:340px; margin:0 auto; }
+  .menu-btn{
+    background:var(--soil-700); border:1px solid var(--line-strong); color:var(--parchment);
+    padding:15px 22px; border-radius:3px; cursor:pointer; font-size:15px; font-weight:500;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    transition:background 0.15s, border-color 0.15s, transform 0.1s;
+    text-align:left;
+  }
+  .menu-btn .arrow{ opacity:0.5; font-family:var(--font-display); font-style:italic; transition:transform 0.15s; }
+  .menu-btn:hover{ background:var(--soil-600); border-color:var(--clay); }
+  .menu-btn:hover .arrow{ transform:translateX(3px); opacity:1; }
+  .menu-btn:active{ transform:translateY(1px); }
+  .menu-btn.primary{
+    background:var(--clay); border-color:var(--clay); color:#1a1108; font-weight:600;
+  }
+  .menu-btn.primary:hover{ background:var(--clay-bright); border-color:var(--clay-bright); }
+  .menu-btn .label-sub{ display:block; font-weight:400; font-size:12.5px; opacity:0.7; margin-top:2px; }
+
+  /* ============ SUB SCREENS (How to play / strategies) ============ */
+  .doc-panel{
+    position:relative; max-width:680px; width:100%;
+    background:var(--soil-800); border:1px solid var(--line); border-radius:4px;
+    box-shadow:var(--shadow-deep); max-height:86vh; display:flex; flex-direction:column;
+  }
+  .doc-header{
+    padding:26px 32px 20px; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; justify-content:space-between; gap:16px;
+  }
+  .doc-header h2{
+    font-family:var(--font-display); font-style:italic; font-weight:500;
+    font-size:28px; color:var(--parchment); font-variant:normal;
+  }
+  .doc-header .plate-no{ font-size:12px; color:var(--parchment-dim); letter-spacing:0.03em; white-space:nowrap; }
+  .close-btn{
+    background:transparent; border:1px solid var(--line-strong); color:var(--parchment-dim);
+    width:32px; height:32px; border-radius:50%; cursor:pointer; font-size:16px; line-height:1;
+    flex-shrink:0; transition:all 0.15s;
+  }
+  .close-btn:hover{ color:var(--parchment); border-color:var(--clay); background:var(--soil-700); }
+  .doc-body{ padding:26px 32px 32px; overflow-y:auto; }
+  .doc-body h3{
+    font-family:var(--font-ui); font-size:12.5px; text-transform:none; letter-spacing:0.01em;
+    color:var(--clay-bright); font-weight:600; margin:26px 0 10px;
+  }
+  .doc-body h3:first-child{ margin-top:0; }
+  .doc-body p{ font-size:14.5px; line-height:1.7; color:var(--parchment-dim); margin-bottom:10px; }
+  .doc-body ul{ list-style:none; }
+  .doc-body li{
+    font-size:14.5px; line-height:1.6; color:var(--parchment-dim); padding:7px 0 7px 22px;
+    position:relative; border-bottom:1px solid rgba(242,233,216,0.06);
+  }
+  .doc-body li:last-child{ border-bottom:none; }
+  .doc-body li::before{
+    content:''; position:absolute; left:2px; top:15px; width:5px; height:5px;
+    background:var(--clay); transform:rotate(45deg);
+  }
+  .doc-body li strong{ color:var(--parchment); font-weight:600; }
+  .key-row{ display:inline-flex; gap:4px; margin-right:8px; }
+  kbd{
+    background:var(--soil-600); border:1px solid var(--line-strong); border-radius:3px;
+    padding:2px 7px; font-size:12px; font-family:var(--font-ui); color:var(--parchment);
+    box-shadow:0 1px 0 rgba(0,0,0,0.4);
+  }
+  .stat-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:4px; }
+  .stat-card{
+    border:1px solid var(--line); padding:12px 14px; border-radius:3px; background:var(--soil-700);
+  }
+  .stat-card .name{ font-weight:600; font-size:13.5px; color:var(--parchment); margin-bottom:4px; }
+  .stat-card .figs{ font-size:12px; color:var(--parchment-dim); }
+  .doc-footer{ padding:18px 32px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; }
+
+  /* ============ HUD (in-game) ============ */
+  #ui-layer{
+    position:absolute; inset:0; pointer-events:none;
+    display:flex; flex-direction:column; justify-content:space-between;
+    z-index:10; opacity:0; transition:opacity 0.4s;
+  }
+  #ui-layer.active{ opacity:1; }
+  .hud-panel{
+    background:rgba(21,18,13,0.90); border:1px solid var(--line);
+    pointer-events:auto; backdrop-filter:blur(6px);
+  }
+  #top-hud{
+    display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:12px 20px; border-bottom:1px solid var(--line-strong);
+  }
+  .resource-group{ display:flex; gap:22px; align-items:center; flex-wrap:wrap; }
+  .res-chip{ display:flex; align-items:center; gap:7px; font-size:15px; font-weight:600; color:var(--parchment); }
+  .res-chip svg{ width:18px; height:18px; flex-shrink:0; }
+  .res-chip .num{ font-variant-numeric:tabular-nums; }
+  .res-chip.seeds svg{ color:var(--clay-bright); }
+  .res-chip.meat svg{ color:var(--brick-bright); }
+  .res-chip.brood{ font-size:13px; font-weight:500; color:var(--parchment-dim); }
+  .res-chip.brood svg{ color:var(--dust-blue); width:16px; height:16px; }
+
+  #raid-warning{
+    display:none; align-items:center; gap:8px; color:var(--brick-bright); font-weight:700;
+    font-size:14.5px; letter-spacing:0.02em; animation:pulse-glow 1s infinite alternate;
+  }
+  #raid-warning svg{ width:18px; height:18px; }
+  @keyframes pulse-glow{
+    from{ opacity:0.75; } to{ opacity:1; text-shadow:0 0 14px rgba(207,91,79,0.6); }
+  }
+
+  #queen-hunger-wrap{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--parchment-dim); }
+  #queen-hunger-wrap svg{ width:16px; height:16px; color:var(--clay-bright); }
+  #queen-hunger-bar{ width:84px; height:8px; background:var(--soil-600); border:1px solid var(--line-strong); border-radius:2px; overflow:hidden; }
+  #queen-hunger-fill{ height:100%; background:var(--moss); width:100%; transition:width 0.3s, background 0.3s; }
+
+  .population{ font-size:13px; color:var(--parchment-dim); }
+  .population .num{ color:var(--parchment); font-weight:600; }
+
+  #toast-wrap{
+    position:absolute; top:70px; left:50%; transform:translateX(-50%);
+    display:flex; flex-direction:column; gap:6px; align-items:center; pointer-events:none; z-index:5;
+  }
+  .toast{
+    background:rgba(21,18,13,0.92); border:1px solid var(--line-strong); padding:7px 16px; border-radius:3px;
+    font-size:13px; color:var(--parchment); opacity:0;
+    animation:toast-in 0.3s forwards, toast-out 0.4s forwards 2.6s;
+  }
+  @keyframes toast-in{ from{opacity:0; transform:translateY(-8px);} to{opacity:1; transform:translateY(0);} }
+  @keyframes toast-out{ from{opacity:1;} to{opacity:0; transform:translateY(-8px);} }
+
+  #context-menu{
+    position:absolute; top:76px; right:16px; display:none; flex-direction:column;
+    align-items:stretch; gap:8px; width:216px; pointer-events:auto; padding:14px; z-index:6;
+  }
+  #context-menu h3{ font-size:12.5px; color:var(--clay-bright); font-weight:600; margin-bottom:2px; }
+  .menu-action-btn{
+    background:var(--soil-700); border:1px solid var(--line-strong); color:var(--parchment);
+    font-size:12.5px; padding:9px 12px; border-radius:3px; cursor:pointer; font-weight:500;
+    transition:background 0.15s, border-color 0.15s;
+  }
+  .menu-action-btn:hover{ background:var(--soil-600); border-color:var(--clay); }
+  #plug-btn{ border-color:var(--brick); color:var(--brick-bright); }
+  #plug-btn:hover{ background:rgba(168,69,60,0.16); border-color:var(--brick-bright); }
+
+  #controls-hint{
+    position:absolute; bottom:88px; left:20px; color:var(--parchment-dim); font-size:12.5px;
+    pointer-events:none; background:rgba(21,18,13,0.85); padding:10px 14px; border-radius:3px;
+    border:1px solid var(--line); max-width:320px; line-height:1.6; z-index:5;
+  }
+  .highlight{ color:var(--clay-bright); font-weight:600; }
+  kbd.mini{ background:var(--soil-600); border:1px solid var(--line-strong); border-radius:2px; padding:1px 5px; font-size:11px; color:var(--parchment); }
+
+  #action-prompt{
+    position:absolute; left:50%; bottom:126px; transform:translateX(-50%);
+    background:rgba(21,18,13,0.92); border:1px solid var(--clay); color:var(--clay-bright);
+    padding:8px 18px; border-radius:20px; font-size:13.5px; font-weight:600;
+    display:none; pointer-events:none; white-space:nowrap; z-index:5;
+  }
+
+  #compass{
+    position:absolute; top:76px; left:16px; pointer-events:none;
+    background:rgba(21,18,13,0.80); border:1px solid var(--line); border-radius:3px;
+    padding:6px 11px; font-size:11.5px; color:var(--parchment-dim); z-index:5;
+    font-variant-numeric:tabular-nums;
+  }
+
+  #bottom-hud{
+    display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px;
+    padding:14px 20px; border-top:1px solid var(--line-strong);
+  }
+  .tools-group, .spawn-group{ display:flex; gap:8px; flex-wrap:wrap; }
+  .tool-btn, .spawn-btn{
+    background:var(--soil-700); color:var(--parchment); border:1px solid var(--line-strong);
+    padding:10px 14px; cursor:pointer; font-weight:600; border-radius:3px; transition:all 0.15s;
+    font-size:12.5px; display:flex; align-items:center; gap:7px;
+  }
+  .tool-btn svg, .spawn-btn svg{ width:15px; height:15px; flex-shrink:0; }
+  .tool-btn:hover, .spawn-btn:hover{ background:var(--soil-600); transform:translateY(-1px); }
+  .tool-btn:active, .spawn-btn:active{ transform:translateY(1px); }
+  .spawn-btn:disabled{ background:var(--soil-800); color:#54493a; cursor:not-allowed; transform:none; border-color:var(--soil-700); }
+  .spawn-btn:disabled svg{ opacity:0.3; }
+  .tool-btn.active{ background:var(--soil-600); border-color:var(--parchment); }
+  .tool-btn.tool-forage.active{ border-color:var(--moss); box-shadow:0 0 0 1px var(--moss); color:var(--moss); }
+  .tool-btn.tool-attack.active{ border-color:var(--brick); box-shadow:0 0 0 1px var(--brick); color:var(--brick-bright); }
+  .btn-cost{ display:block; font-size:10.5px; color:var(--parchment-dim); margin-top:3px; font-weight:400; }
+  .spawn-btn{ flex-direction:column; align-items:flex-start; gap:2px; }
+  .spawn-btn .btn-label-row{ display:flex; align-items:center; gap:7px; }
+
+  /* ============ GAME OVER ============ */
+  #game-over-screen .panel{ max-width:520px; width:100%; text-align:center; }
+  #game-over-screen .eyebrow-mark{ color:var(--brick-bright); }
+  #game-over-screen .title-lockup{ color:var(--parchment); }
+  #game-over-screen .title-rule::after{ background:var(--brick-bright); }
+  #final-stats{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line);
+    border:1px solid var(--line); margin:30px 0; border-radius:3px; overflow:hidden;
+  }
+  #final-stats .stat{ background:var(--soil-800); padding:16px 10px; }
+  #final-stats .stat .val{ font-family:var(--font-display); font-style:italic; font-size:26px; color:var(--clay-bright); }
+  #final-stats .stat .lbl{ font-size:11px; color:var(--parchment-dim); margin-top:4px; letter-spacing:0.02em; }
+
+  /* ============ TUTORIAL OVERLAY ============ */
+  #tutorial-overlay{
+    position:absolute; inset:0; z-index:40; pointer-events:none; display:none;
+  }
+  #tutorial-overlay.active{ display:block; }
+  #tutorial-scrim{
+    position:absolute; inset:0; background:rgba(10,8,5,0.45); pointer-events:none;
+  }
+  #tutorial-card{
+    position:absolute; max-width:340px; background:var(--soil-800); border:1px solid var(--clay);
+    border-radius:4px; padding:20px 22px; pointer-events:auto; box-shadow:var(--shadow-deep);
+    z-index:41;
+  }
+  #tutorial-card .step-tag{ font-size:11px; color:var(--clay-bright); font-weight:600; margin-bottom:8px; letter-spacing:0.02em; }
+  #tutorial-card p{ font-size:14px; line-height:1.6; color:var(--parchment); margin-bottom:14px; }
+  #tutorial-card .tut-actions{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .tut-btn{
+    background:var(--clay); border:1px solid var(--clay); color:#1a1108; font-weight:600;
+    padding:8px 16px; border-radius:3px; cursor:pointer; font-size:13px;
+  }
+  .tut-btn:hover{ background:var(--clay-bright); }
+  .tut-skip{ background:none; border:none; color:var(--parchment-dim); font-size:12.5px; cursor:pointer; text-decoration:underline; }
+  .tut-skip:hover{ color:var(--parchment); }
+  .tutorial-highlight{
+    position:absolute; border:2px solid var(--clay-bright); border-radius:6px;
+    box-shadow:0 0 0 4000px rgba(10,8,5,0.55), 0 0 18px rgba(224,149,79,0.5);
+    pointer-events:none; z-index:39; transition:all 0.3s ease;
+  }
+
+  ::-webkit-scrollbar{ width:9px; }
+  ::-webkit-scrollbar-track{ background:var(--soil-800); }
+  ::-webkit-scrollbar-thumb{ background:var(--soil-600); border-radius:5px; }
+  ::-webkit-scrollbar-thumb:hover{ background:var(--clay); }
+
+  @media (max-width:640px){
+    #controls-hint{ display:none; }
+    .resource-group{ gap:14px; }
+    .stat-grid{ grid-template-columns:1fr; }
+    #final-stats{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="game-root">
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- ======================= START SCREEN ======================= -->
+  <div class="screen visible" id="start-screen">
+    <div class="field-texture"></div>
+    <div class="panel">
+      <div class="eyebrow-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="7" r="2.6"/><circle cx="12" cy="12.5" r="3.6"/><circle cx="12" cy="18.5" r="2.9"/><path d="M9 12 L3 9 M9 12 L3 15 M15 12 L21 9 M15 12 L21 15 M11 9.5 L8 6 M13 9.5 L16 6"/></svg>
+        <span>Field Study No. 14</span>
+      </div>
+      <h1 class="title-lockup">Pheidole rhea
+        <span class="sub">A Colony Survival Simulation</span>
+      </h1>
+      <hr class="title-rule">
+      <p class="lede">Direct a young colony through its first seasons. Grow your population, store enough to feed the queen, and hold the nest against recurring army ant raids.</p>
+      <div class="menu-stack">
+        <button class="menu-btn primary" id="btn-launch">
+          <span>Launch Game<span class="label-sub">Start a new colony immediately</span></span>
+          <span class="arrow">&rarr;</span>
+        </button>
+        <button class="menu-btn" id="btn-tutorial">
+          <span>Interactive Tutorial<span class="label-sub">Learn the controls, step by step</span></span>
+          <span class="arrow">&rarr;</span>
+        </button>
+        <button class="menu-btn" id="btn-howto">
+          <span>How to Play<span class="label-sub">Controls and objectives reference</span></span>
+          <span class="arrow">&rarr;</span>
+        </button>
+        <button class="menu-btn" id="btn-strategies">
+          <span>Strategies<span class="label-sub">Notes from experienced colonies</span></span>
+          <span class="arrow">&rarr;</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= HOW TO PLAY ======================= -->
+  <div class="screen" id="howto-screen">
+    <div class="field-texture"></div>
+    <div class="doc-panel">
+      <div class="doc-header">
+        <h2>How to Play</h2>
+        <button class="close-btn" data-close="howto-screen">&times;</button>
+      </div>
+      <div class="doc-body">
+        <h3>Objective</h3>
+        <p>Keep the queen fed, grow the colony, and survive the army ant raids that arrive on a rolling timer. Losing the queen ends the study.</p>
+
+        <h3>Camera</h3>
+        <ul>
+          <li><span class="key-row"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span> Pan the camera when no ant is under direct control.</li>
+          <li><strong>Scroll wheel</strong> Zoom in and out.</li>
+        </ul>
+
+        <h3>Direct Control</h3>
+        <ul>
+          <li><strong>Click any ant or the queen</strong> to take direct control of it. The camera follows automatically.</li>
+          <li><span class="key-row"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span> Move the controlled ant.</li>
+          <li><span class="key-row"><kbd>Space</kbd></span> Context action — attack, hunt, dig, place a wall, pick up or drop brood, or feed the queen and larvae, depending what's nearby.</li>
+          <li>Click empty space, or press <strong>Release Control</strong>, to hand the ant back to automatic behavior.</li>
+        </ul>
+
+        <h3>Tools (Pointer Mode)</h3>
+        <ul>
+          <li><strong>Pointer</strong> — click a dirt wall touching open space to queue a dig job for your workers. Click an ant to control it.</li>
+          <li><strong>Forage Pheromone</strong> — mark ground with a scent trail; nearby idle workers are drawn toward it to search for food.</li>
+          <li><strong>Attack Pheromone</strong> — mark ground near an intruder; nearby majors and minors are drawn toward it to fight.</li>
+        </ul>
+
+        <h3>Colony Roles</h3>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="name">Minor</div><div class="figs">Fast forager and digger. Cheap to raise.</div></div>
+          <div class="stat-card"><div class="name">Major</div><div class="figs">Stronger fighter and forager. Costs meat.</div></div>
+          <div class="stat-card"><div class="name">Super Major</div><div class="figs">Heavy defender. Can plug a tunnel entrance.</div></div>
+          <div class="stat-card"><div class="name">Queen</div><div class="figs">Lays eggs when fed and not hungry. Protect her.</div></div>
+        </div>
+
+        <h3>Feeding &amp; Brood</h3>
+        <p>Workers carry seeds and meat back to the queen automatically, which restores her hunger and banks the resource. Larvae need a single feeding partway through their growth — stand a carrying ant on top of a hungry larva and press Space to feed it.</p>
+      </div>
+      <div class="doc-footer">
+        <button class="menu-action-btn" data-close="howto-screen">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= STRATEGIES ======================= -->
+  <div class="screen" id="strategies-screen">
+    <div class="field-texture"></div>
+    <div class="doc-panel">
+      <div class="doc-header">
+        <h2>Strategies</h2>
+        <button class="close-btn" data-close="strategies-screen">&times;</button>
+      </div>
+      <div class="doc-body">
+        <h3>Early Colony</h3>
+        <ul>
+          <li>Spend early seeds on <strong>minors</strong>. They forage and dig fastest and cost no meat.</li>
+          <li>Keep an eye on the hunger gauge — a starving queen stops laying eggs and slowly loses health.</li>
+          <li>Let workers stockpile a buffer of both resources before raising a major or super major.</li>
+        </ul>
+
+        <h3>Before a Raid</h3>
+        <ul>
+          <li>The raid warning gives you a moment to prepare — pull foragers back toward the nest entrance.</li>
+          <li>Take direct control of a <strong>super major</strong> and use <strong>Toggle Plug Mode</strong> to seal a tunnel chokepoint against incoming army ants.</li>
+          <li>Drop an <strong>attack pheromone</strong> near the entrance before ants arrive; nearby defenders will already be moving into position when the raid lands.</li>
+        </ul>
+
+        <h3>During a Raid</h3>
+        <ul>
+          <li>Army ants go after loose brood first, then whichever ant is nearest. Keep brood deep in the nest, away from the surface.</li>
+          <li>Majors and super majors will break off other tasks to assist any ant under attack — a cluster of them near the entrance holds a line well.</li>
+          <li>Direct-controlling a major yourself lets you focus fire on the army ant doing the most damage.</li>
+        </ul>
+
+        <h3>Long Term</h3>
+        <ul>
+          <li>Dig a second chamber deeper underground to store brood far from the surface entrance army ants use.</li>
+          <li>Balance your population between foragers and defenders — an all-defense colony starves, an all-forager colony gets overrun.</li>
+          <li>Hunting prey on the surface is the fastest way to bank meat for majors and super majors.</li>
+        </ul>
+      </div>
+      <div class="doc-footer">
+        <button class="menu-action-btn" data-close="strategies-screen">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= GAME OVER ======================= -->
+  <div class="screen" id="game-over-screen">
+    <div class="field-texture"></div>
+    <div class="panel">
+      <div class="eyebrow-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 L12 13 M12 13 L8 17 M12 13 L16 17 M6 21 L18 21"/></svg>
+        <span>Colony Record</span>
+      </div>
+      <h1 class="title-lockup" id="game-over-title">Colony Lost
+        <span class="sub" id="game-over-sub">The queen has died. No further eggs will be laid.</span>
+      </h1>
+      <hr class="title-rule">
+      <div id="final-stats">
+        <div class="stat"><div class="val" id="stat-wave">1</div><div class="lbl">Waves Survived</div></div>
+        <div class="stat"><div class="val" id="stat-pop">1</div><div class="lbl">Peak Population</div></div>
+        <div class="stat"><div class="val" id="stat-time">0:00</div><div class="lbl">Time Survived</div></div>
+      </div>
+      <div class="menu-stack">
+        <button class="menu-btn primary" id="btn-restart">
+          <span>Start a New Colony</span>
+          <span class="arrow">&rarr;</span>
+        </button>
+        <button class="menu-btn" id="btn-gameover-menu">
+          <span>Return to Main Menu</span>
+          <span class="arrow">&rarr;</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= TUTORIAL OVERLAY ======================= -->
+  <div id="tutorial-overlay">
+    <div id="tutorial-scrim"></div>
+    <div class="tutorial-highlight" id="tutorial-highlight" style="display:none;"></div>
+    <div id="tutorial-card">
+      <div class="step-tag" id="tut-step-tag">STEP 1 OF 8</div>
+      <p id="tut-step-text">Welcome text goes here.</p>
+      <div class="tut-actions">
+        <button class="tut-skip" id="tut-skip">Skip tutorial</button>
+        <button class="tut-btn" id="tut-next">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= IN-GAME HUD ======================= -->
+  <div id="controls-hint">
+    <span class="key-row"><kbd class="mini">W</kbd><kbd class="mini">A</kbd><kbd class="mini">S</kbd><kbd class="mini">D</kbd></span> Pan camera &middot; Scroll to zoom<br>
+    <span class="highlight">Click an ant</span> or the queen to take control<br>
+    <span class="key-row"><kbd class="mini">&uarr;&darr;&larr;&rarr;</kbd></span> Move &middot; <span class="key-row"><kbd class="mini">Space</kbd></span> Act
+  </div>
+
+  <div id="action-prompt"></div>
+  <div id="compass"></div>
+
+  <div id="ui-layer">
+    <div id="top-hud" class="hud-panel">
+      <div class="resource-group">
+        <span class="res-chip seeds">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c3 3 6 7 6 11a6 6 0 0 1-12 0c0-4 3-8 6-11z"/></svg>
+          <span class="num" id="count-seeds">10</span>
+        </span>
+        <span class="res-chip meat">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 3c-3 0-6 2-7 5-2 0-4 2-4 4.5 0 1 .3 1.8.8 2.5L4 17.5 6.5 20l2.5-2.8c.7.5 1.5.8 2.5.8 2.5 0 4.5-2 4.5-4 3-1 5-4 5-7 0-1.7-1.4-4-4-4z"/></svg>
+          <span class="num" id="count-meat">5</span>
+        </span>
+        <span class="res-chip brood">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="13" rx="6" ry="8"/></svg>
+          Brood <span class="num" id="count-brood">0</span>
+        </span>
+        <div id="queen-hunger-wrap">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="6" r="3"/><path d="M4 20l1.5-9L9 13l3-7 3 7 3.5-2L20 20z"/></svg>
+          <span>Queen</span>
+          <div id="queen-hunger-bar"><div id="queen-hunger-fill"></div></div>
+        </div>
+      </div>
+      <div id="raid-warning">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 L22 20 L2 20 Z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17" r="0.6" fill="currentColor"/></svg>
+        <span>Wave <span id="wave-num">1</span> — Army Ant Raid</span>
+      </div>
+      <div class="population">Colony <span class="num" id="count-pop">1</span></div>
+    </div>
+
+    <div id="toast-wrap"></div>
+
+    <div id="context-menu" class="hud-panel">
+      <h3 id="context-menu-title">Super Major Selected</h3>
+      <button class="menu-action-btn" id="plug-btn">Toggle Plug Mode (Defend)</button>
+      <button class="menu-action-btn" id="release-btn">Release Control</button>
+    </div>
+
+    <div id="bottom-hud" class="hud-panel">
+      <div class="tools-group">
+        <button class="tool-btn active" id="tool-pointer" data-tool="pointer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 8-6 2-2 6z"/></svg>
+          Pointer
+        </button>
+        <button class="tool-btn tool-forage" id="tool-forage" data-tool="forage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21c-4-3-7-6.5-7-10.5A7 7 0 0 1 12 3a7 7 0 0 1 7 7.5C19 14.5 16 18 12 21z"/></svg>
+          Forage Pheromone
+        </button>
+        <button class="tool-btn tool-attack" id="tool-attack" data-tool="attack">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M9 6h9v9"/></svg>
+          Attack Pheromone
+        </button>
+      </div>
+      <div class="spawn-group">
+        <button class="spawn-btn" id="spawn-minor">
+          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="5" ry="7"/></svg>Spawn Minor</span>
+          <span class="btn-cost">2 Seeds</span>
+        </button>
+        <button class="spawn-btn" id="spawn-major">
+          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="6" ry="8"/></svg>Spawn Major</span>
+          <span class="btn-cost">3 Seeds, 1 Meat</span>
+        </button>
+        <button class="spawn-btn" id="spawn-super">
+          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="7" ry="9"/></svg>Spawn Super Major</span>
+          <span class="btn-cost">4 Seeds, 2 Meat</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ======================================================================
+   SCREEN / GAME-STATE MANAGEMENT
+   ====================================================================== */
+const SCREENS = ['start-screen','howto-screen','strategies-screen','game-over-screen'];
+function showScreen(id){
+    SCREENS.forEach(s => document.getElementById(s).classList.remove('visible'));
+    if (id) document.getElementById(id).classList.add('visible');
+}
+function hideAllScreens(){ showScreen(null); }
+
+let gameRunning = false;   // true while PLAYING or TUTORIAL (loop active)
+let gameStarted = false;   // becomes true once initial world/entities exist
+let peakPopulation = 1;
+let gameStartTime = 0;
+
+document.getElementById('btn-launch').onclick = () => startNewGame(false);
+document.getElementById('btn-tutorial').onclick = () => startNewGame(true);
+document.getElementById('btn-howto').onclick = () => showScreen('howto-screen');
+document.getElementById('btn-strategies').onclick = () => showScreen('strategies-screen');
+document.querySelectorAll('[data-close]').forEach(btn => {
+    btn.onclick = () => showScreen('start-screen');
+});
+document.getElementById('btn-restart').onclick = () => startNewGame(false);
+document.getElementById('btn-gameover-menu').onclick = () => { showScreen('start-screen'); };
+
+function startNewGame(withTutorial){
+    resetGameState();
+    hideAllScreens();
+    document.getElementById('ui-layer').classList.add('active');
+    gameRunning = true;
+    gameStarted = true;
+    gameStartTime = performance.now();
+    peakPopulation = 1;
+    if (withTutorial) startTutorial();
+}
+
+function endGame(){
+    gameRunning = false;
+    document.getElementById('ui-layer').classList.remove('active');
+    endTutorial(true);
+    const elapsedMs = performance.now() - gameStartTime;
+    const mins = Math.floor(elapsedMs / 60000);
+    const secs = Math.floor((elapsedMs % 60000) / 1000);
+    document.getElementById('stat-wave').textContent = Math.max(1, state.wave - (state.isRaidActive ? 0 : 0));
+    document.getElementById('stat-pop').textContent = peakPopulation;
+    document.getElementById('stat-time').textContent = mins + ':' + String(secs).padStart(2,'0');
+    showScreen('game-over-screen');
+}
+
+/**
+ * ==========================================
+ * FPS SETTING - CHANGE THIS TO REDUCE LAG
+ * ==========================================
+ */
+let TARGET_FPS = 60;
+
+/**
+ * ENGINE & CAMERA SETUP
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const TILE_SIZE = 40;
+const SURFACE_Y = 15;
+const CHUNK_SIZE = 16;
+
+const camera = { x: 0, y: 0, zoom: 1.2 };
+const keys = { w: false, a: false, s: false, d: false, arrowup: false, arrowdown: false, arrowleft: false, arrowright: false, ' ': false };
+let spacePressed = false;
+let pathfindsThisFrame = 0;
+
+window.addEventListener('keydown', e => {
+    if (!gameRunning) return;
+    let k = e.key.toLowerCase();
+    if (k === ' ') k = ' ';
+    if (keys.hasOwnProperty(k)) {
+        keys[k] = true;
+        if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
+    }
+});
+window.addEventListener('keyup', e => {
+    let k = e.key.toLowerCase();
+    if (k === ' ') { k = ' '; spacePressed = false; }
+    if (keys.hasOwnProperty(k)) keys[k] = false;
+});
+canvas.addEventListener('wheel', e => {
+    if (!gameRunning) return;
+    camera.zoom -= e.deltaY * 0.001;
+    camera.zoom = Math.max(0.4, Math.min(camera.zoom, 3.0));
+});
+
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+function distSq(x1, y1, x2, y2) {
+    return (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+}
+
+/**
+ * INFINITE WORLD
+ */
+const chunks = new Map();
+const decorations = new Map();
+const surfaceCache = new Map();
+
+function chunkKey(cx, cy) { return cx + ',' + cy; }
+
+function hash2(x, y) {
+    let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+    return h - Math.floor(h);
+}
+
+function surfaceHeightAt(gx) {
+    if (surfaceCache.has(gx)) return surfaceCache.get(gx);
+    let base = SURFACE_Y + Math.round(Math.sin(gx * 0.07) * 2 + Math.sin(gx * 0.021) * 3);
+    let hill = Math.round(Math.sin(gx * 0.004) * 12);
+    let val = base + hill;
+    surfaceCache.set(gx, val);
+    return val;
+}
+
+function generateChunk(cx, cy) {
+    const data = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const baseX = cx * CHUNK_SIZE, baseY = cy * CHUNK_SIZE;
+    const decos = [];
+
+    for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+            const gx = baseX + lx, gy = baseY + ly;
+            const surf = surfaceHeightAt(gx);
+            let val = (gy < surf) ? 0 : 1;
+
+            if (val === 1) {
+                if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2;
+                const cavernNoise = hash2(gx * 0.09 + 50, gy * 0.09 + 50);
+                if (gy > surf + 4 && cavernNoise > 0.965) {
+                    val = 0;
+                }
+            }
+            data[ly * CHUNK_SIZE + lx] = val;
+        }
+    }
+
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const gx = baseX + lx;
+        const surf = surfaceHeightAt(gx);
+        if (surf >= baseY && surf < baseY + CHUNK_SIZE) {
+            const r = hash2(gx * 5.3, 91.1);
+            if (r > 0.82) decos.push({ type: 'grass', x: gx, y: surf - 1 });
+            else if (r > 0.74) decos.push({ type: 'pebble', x: gx, y: surf - 1 });
+            else if (r > 0.71) decos.push({ type: 'mushroom', x: gx, y: surf - 1 });
+
+            if (hash2(gx * 4.1, 88.8) > 0.95) {
+                state.surfaceItems.push({ type: 'seed', x: gx, y: surf - 1 });
+                state.jobs.push({ type: 'HARVEST', x: gx, y: surf - 1, resourceType: 'seed', assigned: false });
+            }
+        }
+        if (hash2(gx * 1.7 + 200, cy * 3.3 + 200) > 0.992) {
+            decos.push({ type: 'bank_marker', x: gx, y: surfaceHeightAt(gx) });
+        }
+    }
+    for (let i = 0; i < 3; i++) {
+        const lx = Math.floor(hash2(cx * 13 + i, cy * 17 + i) * CHUNK_SIZE);
+        const ly = Math.floor(hash2(cx * 19 + i, cy * 23 + i) * CHUNK_SIZE);
+        const gx = baseX + lx, gy = baseY + ly;
+        if (gy > surfaceHeightAt(gx) + 2) decos.push({ type: 'bg_rock', x: gx, y: gy });
+    }
+
+    chunks.set(chunkKey(cx, cy), data);
+    decorations.set(chunkKey(cx, cy), decos);
+}
+
+function ensureChunk(cx, cy) {
+    const key = chunkKey(cx, cy);
+    if (!chunks.has(key)) generateChunk(cx, cy);
+    return chunks.get(key);
+}
+
+function getTile(gx, gy) {
+    const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
+    const data = ensureChunk(cx, cy);
+    const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const ly = ((gy % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    return data[ly * CHUNK_SIZE + lx];
+}
+
+function setTile(gx, gy, val) {
+    const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
+    const data = ensureChunk(cx, cy);
+    const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const ly = ((gy % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    data[ly * CHUNK_SIZE + lx] = val;
+}
+
+function isWall(gx, gy) { return getTile(gx, gy) !== 0; }
+function isRock(gx, gy) { return getTile(gx, gy) === 2; }
+
+function initMap() {
+    const centerX = 0;
+    for (let y = SURFACE_Y - 1; y < SURFACE_Y + 5; y++) setTile(centerX, y, 0);
+    for (let cy = SURFACE_Y + 5; cy <= SURFACE_Y + 7; cy++) {
+        for (let cx = centerX - 3; cx <= centerX + 3; cx++) setTile(cx, cy, 0);
+    }
+    camera.x = (centerX * TILE_SIZE) - (canvas.width / 2) / camera.zoom;
+    camera.y = ((SURFACE_Y + 5) * TILE_SIZE) - (canvas.height / 2) / camera.zoom;
+}
+
+/**
+ * GAME STATE
+ */
+let state = null;
+
+function freshState(){
+    const s = {
+        resources: { seeds: 15, meat: 5 },
+        entities: [], jobs: [], surfaceItems: [], pheromones: [],
+        particles: [], floatingTexts: [], splats: [], flies: [],
+        controlledAnt: null, raidTimer: 5000, isRaidActive: false, wave: 1,
+        activeTool: 'pointer', isDrawing: false, shake: 0, time: 0,
+        postBattleTimer: 0, seedRespawnTimer: 900,
+        queenHunger: 100, nextEggTimer: 600,
+        gameOver: false
+    };
+    s.queenHungerDrain = 0.012;
+    s.brood = [];
+    return s;
+}
+
+// Resource thresholds: workers stop foraging once the nest is well stocked
+const FORAGE_SEED_CAP = 20;
+const FORAGE_MEAT_CAP = 12;
+
+const ASSETS = {
+    queen: { src: 'https://gnome-steader.github.io/Ant-game/queen.png', img: new Image(), loaded: false, fallback: '#9b59b6' },
+    minor: { src: 'https://gnome-steader.github.io/Ant-game/minor.png', img: new Image(), loaded: false, fallback: '#d9a441' },
+    major: { src: 'https://gnome-steader.github.io/Ant-game/major.png', img: new Image(), loaded: false, fallback: '#c1793f' },
+    super_major: { src: 'https://gnome-steader.github.io/Ant-game/super-major.png', img: new Image(), loaded: false, fallback: '#a8453c' },
+    army_ant: { src: 'https://gnome-steader.github.io/Ant-game/army_ant.png', img: new Image(), loaded: false, fallback: '#8b2a2a' },
+    dirt_tile: { src: 'https://gnome-steader.github.io/Ant-game/dirt_tile.png', img: new Image(), loaded: false, fallback: '#4a3826' },
+    dirt_ball: { src: 'https://gnome-steader.github.io/Ant-game/dirt_ball.png', img: new Image(), loaded: false, fallback: '#6b4a2b' },
+    nut: { src: 'https://gnome-steader.github.io/Ant-game/nut.png', img: new Image(), loaded: false, fallback: null },
+    meat_food: { src: 'https://gnome-steader.github.io/Ant-game/meat.png', img: new Image(), loaded: false, fallback: null },
+    bug: { src: 'https://gnome-steader.github.io/Ant-game/bug.png', img: new Image(), loaded: false, fallback: null }
+};
+Object.values(ASSETS).forEach(asset => {
+    asset.img.src = asset.src;
+    asset.img.onload = () => asset.loaded = true;
+    asset.img.onerror = () => asset.loaded = false;
+});
+
+class Particle {
+    constructor(x, y, color, speed = 4, size = null, gravity = 0) {
+        this.x = x; this.y = y;
+        this.vx = (Math.random() - 0.5) * speed; this.vy = (Math.random() - 0.5) * speed;
+        this.life = 1.0; this.decay = Math.random() * 0.05 + 0.02;
+        this.color = color; this.size = size || (Math.random() * 4 + 2);
+        this.gravity = gravity;
+    }
+    update() { this.x += this.vx; this.y += this.vy; this.vy += this.gravity; this.life -= this.decay; }
+    draw() {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color; ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+        ctx.globalAlpha = 1.0;
+    }
+}
+class FloatingText {
+    constructor(x, y, text, color, size = 18) {
+        this.x = x; this.y = y; this.text = text; this.color = color;
+        this.life = 1.0; this.vy = -1; this.size = size;
+    }
+    update() { this.y += this.vy; this.vy *= 0.97; this.life -= 0.018; }
+    draw() {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.font = `600 ${this.size}px Inter, Arial`;
+        ctx.fillText(this.text, this.x + 1, this.y + 1);
+        ctx.fillStyle = this.color;
+        ctx.fillText(this.text, this.x, this.y);
+        ctx.globalAlpha = 1.0;
+    }
+}
+function spawnParticles(x, y, color, count = 5, speed = 4, size = null, gravity = 0) {
+    for (let i = 0; i < count; i++) state.particles.push(new Particle(x, y, color, speed, size, gravity));
+    if (state.particles.length > 200) state.particles.splice(0, state.particles.length - 200);
+}
+function spawnText(x, y, text, color, size) { state.floatingTexts.push(new FloatingText(x, y, text, color, size)); }
+function triggerShake(intensity) { state.shake = Math.max(state.shake, intensity); }
+function toast(msg) {
+    const wrap = document.getElementById('toast-wrap');
+    const el = document.createElement('div');
+    el.className = 'toast'; el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+}
+
+function resolveCollision(entity) {
+    const radius = TILE_SIZE * 0.35;
+    const left = entity.x - radius, right = entity.x + radius;
+    const top = entity.y - radius, bottom = entity.y + radius;
+
+    const minGx = Math.floor(left / TILE_SIZE), maxGx = Math.floor(right / TILE_SIZE);
+    const minGy = Math.floor(top / TILE_SIZE), maxGy = Math.floor(bottom / TILE_SIZE);
+
+    for (let gy = minGy; gy <= maxGy; gy++) {
+        for (let gx = minGx; gx <= maxGx; gx++) {
+            if (!isWall(gx, gy)) continue;
+
+            const tileLeft = gx * TILE_SIZE, tileRight = tileLeft + TILE_SIZE;
+            const tileTop = gy * TILE_SIZE, tileBottom = tileTop + TILE_SIZE;
+
+            const closestX = Math.max(tileLeft, Math.min(entity.x, tileRight));
+            const closestY = Math.max(tileTop, Math.min(entity.y, tileBottom));
+
+            const dx = entity.x - closestX, dy = entity.y - closestY;
+            const dSq = dx * dx + dy * dy;
+
+            if (dSq < radius * radius && dSq > 0.0001) {
+                const dist = Math.sqrt(dSq);
+                const overlap = radius - dist;
+                entity.x += (dx / dist) * overlap;
+                entity.y += (dy / dist) * overlap;
+            } else if (dSq <= 0.0001) {
+                const centerX = tileLeft + TILE_SIZE / 2, centerY = tileTop + TILE_SIZE / 2;
+                const pushDx = entity.x - centerX, pushDy = entity.y - centerY;
+                const pushDist = Math.hypot(pushDx, pushDy) || 1;
+                entity.x += (pushDx / pushDist) * (radius + 1);
+                entity.y += (pushDy / pushDist) * (radius + 1);
+            }
+        }
+    }
+}
+
+function lineCrossesWall(x1, y1, x2, y2) {
+    const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (TILE_SIZE * 0.5)));
+    for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const cx = x1 + (x2 - x1) * t, cy = y1 + (y2 - y1) * t;
+        if (isWall(Math.floor(cx / TILE_SIZE), Math.floor(cy / TILE_SIZE))) return true;
+    }
+    return false;
+}
+
+function heuristic(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+
+function findPath(startX, startY, endX, endY, isEnemy = false, maxRadius = 120) {
+    if (startX === endX && startY === endY) return [];
+    if (isWall(endX, endY)) return null;
+
+    let openSet = [{ x: startX, y: startY, g: 0, f: heuristic({ x: startX, y: startY }, { x: endX, y: endY }), parent: null }];
+    let closedSet = new Set();
+    let iterations = 0;
+    let closestNode = openSet[0];
+    let closestDist = closestNode.f;
+
+    while (openSet.length > 0 && iterations < 600) {
+        iterations++;
+        openSet.sort((a, b) => a.f - b.f);
+        let current = openSet.shift();
+
+        let dist = heuristic(current, {x: endX, y: endY});
+        if (dist < closestDist) {
+            closestNode = current;
+            closestDist = dist;
+        }
+
+        if (current.x === endX && current.y === endY) {
+            let path = []; let curr = current;
+            while (curr.parent) { path.push({ x: curr.x, y: curr.y }); curr = curr.parent; }
+            return path.reverse();
+        }
+        closedSet.add(`${current.x},${current.y}`);
+        if (Math.abs(current.x - startX) > maxRadius || Math.abs(current.y - startY) > maxRadius) continue;
+
+        let neighbors = [
+            { x: current.x, y: current.y - 1 }, { x: current.x, y: current.y + 1 },
+            { x: current.x - 1, y: current.y }, { x: current.x + 1, y: current.y }
+        ];
+
+        for (let n of neighbors) {
+            if (isWall(n.x, n.y)) continue;
+            if (closedSet.has(`${n.x},${n.y}`)) continue;
+            if (isEnemy && state.entities.some(e => e.type === 'super_major' && e.state === 'DEFENDING' && e.gx === n.x && e.gy === n.y)) continue;
+
+            let gScore = current.g + 1;
+            let existing = openSet.find(o => o.x === n.x && o.y === n.y);
+            if (!existing) openSet.push({ x: n.x, y: n.y, g: gScore, f: gScore + heuristic(n, { x: endX, y: endY }), parent: current });
+            else if (gScore < existing.g) { existing.g = gScore; existing.f = gScore + heuristic(n, { x: endX, y: endY }); existing.parent = current; }
+        }
+    }
+
+    if (closestNode && closestNode !== openSet[0]) {
+        let path = []; let curr = closestNode;
+        while (curr.parent) { path.push({ x: curr.x, y: curr.y }); curr = curr.parent; }
+        return path.reverse();
+    }
+
+    return null;
+}
+
+const STATS = {
+    queen: { hp: 200, dmg: 0, speed: 1.1 },
+    minor: { hp: 15, dmg: 2, speed: 3.3 },
+    major: { hp: 40, dmg: 8, speed: 2.4 },
+    super_major: { hp: 80, dmg: 15, speed: 1.8 },
+    army_ant: { hp: 25, dmg: 5, speed: 2.5 }
+};
+
+const EGG_TIME = 1200;
+const LARVA_TIME = 1800;
+const PUPA_TIME = 1200;
+
+function makeBrood(x, y, willHatchAs = 'minor') {
+    return {
+        kind: 'brood', stage: 'egg', x, y,
+        timer: EGG_TIME, needsFood: false, fed: false, carriedBy: null,
+        willHatchAs, id: Math.random().toString(36).slice(2),
+        playerMoved: false
+    };
+}
+
+/* ---------- Pheromone helpers (BUGFIX: pheromones now actually influence AI) ---------- */
+function findNearestPheromone(type, fromX, fromY, maxDistTiles) {
+    let best = null, bestDist = (maxDistTiles * TILE_SIZE) ** 2;
+    for (const p of state.pheromones) {
+        if (p.type !== type) continue;
+        const d = distSq(p.x, p.y, fromX, fromY);
+        if (d < bestDist) { bestDist = d; best = p; }
+    }
+    return best;
+}
+
+// BUGFIX: pheromones are drawn freely over undug dirt (that's normal — players mark a
+// direction, not just open tunnel), so a naive isWall() check on the exact tile silently
+// drops most marks. Spiral outward from the marked tile to the nearest open tile so ants
+// can actually path toward the general area the player indicated.
+function nearestOpenTile(gx, gy, maxRadius = 6) {
+    if (!isWall(gx, gy)) return { x: gx, y: gy };
+    for (let r = 1; r <= maxRadius; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+            for (let dy = -r; dy <= r; dy++) {
+                if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                if (!isWall(gx + dx, gy + dy)) return { x: gx + dx, y: gy + dy };
+            }
+        }
+    }
+    return null;
+}
+
+class Prey {
+    constructor(x, y) {
+        this.x = x; this.y = y;
+        this.hp = 12; this.maxHp = 12;
+        this.speed = 1.4;
+        this.wanderTimer = 0; this.dir = { x: 0, y: 0 };
+        this.flash = 0; this.fleeing = false;
+        this.size = 15;
+        this.id = Math.random().toString(36).slice(2);
+    }
+    update() {
+        if (this.flash > 0) this.flash--;
+        // BUGFIX: only flee ants that are actually hunting/attacking (huntTargetId === this.id,
+        // or any non-worker within a very tight panic radius), not every ant that merely wanders near.
+        let threat = state.entities.find(e =>
+            e.type !== 'army_ant' && e.type !== 'queen' &&
+            (e.huntTargetId === this.id || distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.1) ** 2)
+        );
+        if (threat) {
+            this.fleeing = true;
+            let angle = Math.atan2(this.y - threat.y, this.x - threat.x);
+            let nx = this.x + Math.cos(angle) * this.speed * 1.6;
+            let ny = this.y + Math.sin(angle) * this.speed * 1.6;
+            if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) { this.x = nx; this.y = ny; }
+        } else {
+            this.fleeing = false;
+            this.wanderTimer--;
+            if (this.wanderTimer <= 0) {
+                this.wanderTimer = 60 + Math.random() * 90;
+                let angle = Math.random() * Math.PI * 2;
+                this.dir = { x: Math.cos(angle), y: Math.sin(angle) };
+            }
+            let nx = this.x + this.dir.x * this.speed * 0.4;
+            let ny = this.y + this.dir.y * this.speed * 0.4;
+            if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) { this.x = nx; this.y = ny; }
+        }
+        let surf = surfaceHeightAt(Math.floor(this.x / TILE_SIZE));
+        this.y = Math.max((surf - 6) * TILE_SIZE, Math.min((surf - 1) * TILE_SIZE, this.y));
+    }
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        const asset = ASSETS.bug;
+        if (asset.loaded && asset.img.width && asset.img.height) {
+            if (this.flash > 0) {
+                ctx.filter = 'sepia(1) saturate(6) hue-rotate(-40deg) brightness(1.1)';
+            }
+            let size = this.size * 2.1;
+            let aspect = asset.img.width / asset.img.height;
+            let drawW = size, drawH = size;
+            if (aspect > 1) drawH = size / aspect; else drawW = size * aspect;
+            let angle = Math.atan2(this.dir.y, this.dir.x) || 0;
+            if (this.fleeing) {
+                let a2 = Math.atan2(this.y, this.x);
+            }
+            ctx.rotate(Math.atan2(this.dir.y || 0.01, this.dir.x || 0.01));
+            ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
+            ctx.filter = 'none';
+        } else {
+            if (this.flash > 0) ctx.fillStyle = '#c17a5a'; else ctx.fillStyle = '#5a4636';
+            ctx.beginPath(); ctx.ellipse(0, 0, this.size / 2, this.size / 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#3a2c1f';
+            ctx.beginPath(); ctx.ellipse(-this.size / 3, 0, this.size / 4, this.size / 5, 0, 0, Math.PI * 2); ctx.fill();
+        }
+        if (this.hp < this.maxHp) {
+            ctx.fillStyle = 'rgba(168,69,60,0.9)'; ctx.fillRect(-12, -this.size / 2 - 10, 24, 3);
+            ctx.fillStyle = 'rgba(122,154,90,0.9)'; ctx.fillRect(-12, -this.size / 2 - 10, 24 * (this.hp / this.maxHp), 3);
+        }
+        ctx.restore();
+    }
+}
+
+function spawnPrey() {
+    if (state.flies.length >= 25) return;
+    let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
+    let gx = originX + Math.floor((Math.random() - 0.5) * 160);
+    let surf = surfaceHeightAt(gx);
+    let gy = surf - 1 - Math.floor(Math.random() * 4);
+    state.flies.push(new Prey(gx * TILE_SIZE + 20, gy * TILE_SIZE + 20));
+}
+
+class Ant {
+    constructor(type, x, y) {
+        this.type = type; this.x = x; this.y = y;
+        this.gx = Math.floor(x / TILE_SIZE); this.gy = Math.floor(y / TILE_SIZE);
+        this.state = 'IDLE'; this.path = []; this.job = null;
+        this.pathTimer = 0;
+
+        this.maxHp = STATS[type].hp; this.hp = this.maxHp;
+        this.dmg = STATS[type].dmg; this.baseSpeed = STATS[type].speed; this.speed = this.baseSpeed;
+
+        this.angle = 0; this.wobble = Math.random() * Math.PI;
+        this.attackTimer = 0; this.flash = 0;
+        this.underAttack = 0;
+        this.alertTimer = 0;
+        this.carriedResource = null;
+        this.carriedBrood = null;
+        this.huntTargetId = null;
+    }
+
+    update() {
+        this.gx = Math.floor(this.x / TILE_SIZE); this.gy = Math.floor(this.y / TILE_SIZE);
+        if (this.flash > 0) this.flash--;
+        if (this.underAttack > 0) this.underAttack--;
+        if (this.alertTimer > 0) this.alertTimer--;
+        if (this.pathTimer > 0) this.pathTimer--;
+        this.speed = (this.state === 'DEFENDING') ? 0 : this.baseSpeed;
+
+        if (state.controlledAnt === this) {
+            this.handlePlayerControl();
+            resolveCollision(this);
+            return;
+        }
+
+        if (this.type === 'queen') {
+            this.updateQueenAI();
+            resolveCollision(this);
+            return;
+        }
+
+        if (this.type === 'army_ant') {
+            this.updateArmyAntAI();
+            resolveCollision(this);
+            return;
+        }
+
+        if (this.attackTimer > 0) this.attackTimer--;
+        let target = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2) ** 2);
+        if (target) {
+            if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING' || this.state === 'FEEDING_LARVA' || this.state === 'FETCHING_BROOD' || this.state === 'HUNTING') {
+                if (this.job) { this.job.assigned = false; this.job = null; }
+                this.huntTargetId = null;
+                this.state = 'IDLE';
+            }
+            this.path = [];
+            this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+            if (this.attackTimer <= 0) {
+                target.hp -= this.dmg;
+                target.flash = 10;
+                target.underAttack = 300;
+                this.attackTimer = 30;
+                spawnParticles(target.x, target.y, '#a8453c', 6, 6);
+                triggerShake(2);
+
+                const lungeDist = 8;
+                const lungeX = this.x + Math.cos(this.angle) * lungeDist;
+                const lungeY = this.y + Math.sin(this.angle) * lungeDist;
+                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+            }
+            resolveCollision(this);
+            return;
+        }
+
+        if (this.path.length > 0) {
+            let target = this.path[0];
+            let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
+            let dx = tx - this.x, dy = ty - this.y;
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
+
+            if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
+            else {
+                this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed;
+                this.angle = Math.atan2(dy, dx);
+                this.wobble += 0.4;
+                if (Math.random() < 0.1 && this.gy >= SURFACE_Y) spawnParticles(this.x, this.y, '#4a3826', 1, 1);
+            }
+        } else {
+            this.handleStateLogic();
+        }
+
+        resolveCollision(this);
+    }
+
+    updateArmyAntAI() {
+        if (this.attackTimer > 0) this.attackTimer--;
+
+        let target = state.entities.find(e => e.type !== 'army_ant' && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2) ** 2);
+        if (target) {
+            this.path = [];
+            this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+            if (this.attackTimer <= 0) {
+                target.hp -= this.dmg;
+                target.flash = 10;
+                target.underAttack = 300;
+                this.attackTimer = 28;
+                spawnParticles(target.x, target.y, '#a8453c', 6, 6);
+                triggerShake(2);
+                const lungeDist = 8;
+                const lungeX = this.x + Math.cos(this.angle) * lungeDist;
+                const lungeY = this.y + Math.sin(this.angle) * lungeDist;
+                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+            }
+            return;
+        }
+
+        let nearestBrood = null, nearestBroodDist = Infinity;
+        for (let b of state.brood) {
+            if (b.carriedBy) continue;
+            let d = distSq(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, this.x, this.y);
+            if (d < nearestBroodDist) { nearestBroodDist = d; nearestBrood = b; }
+        }
+
+        if (nearestBrood && nearestBroodDist < (TILE_SIZE * 0.7) ** 2) {
+            let bx = nearestBrood.x * TILE_SIZE + 20, by = nearestBrood.y * TILE_SIZE + 20;
+            state.brood = state.brood.filter(b => b !== nearestBrood);
+            spawnParticles(bx, by, '#6f8fa8', 10, 5);
+            spawnText(bx, by - 10, 'BROOD LOST', '#cf5b4f');
+            triggerShake(3);
+            updateUI();
+            return;
+        }
+
+        let chaseTarget = null;
+        if (nearestBrood) {
+            chaseTarget = { gx: nearestBrood.x, gy: nearestBrood.y };
+        } else {
+            let nearestAnt = null, nearestAntDist = Infinity;
+            for (let e of state.entities) {
+                if (e.type !== 'army_ant') {
+                    let d = distSq(e.x, e.y, this.x, this.y);
+                    if (d < nearestAntDist) { nearestAntDist = d; nearestAnt = e; }
+                }
+            }
+            if (nearestAnt) chaseTarget = { gx: nearestAnt.gx, gy: nearestAnt.gy };
+        }
+
+        if (chaseTarget) {
+            if (this.path.length === 0 && this.pathTimer <= 0) {
+                if (pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, chaseTarget.gx, chaseTarget.gy, true) || [];
+                    this.pathTimer = 15 + Math.floor(Math.random() * 10);
+                }
+            }
+        }
+
+        if (this.path.length > 0) {
+            let t = this.path[0];
+            let tx = t.x * TILE_SIZE + TILE_SIZE / 2, ty = t.y * TILE_SIZE + TILE_SIZE / 2;
+            let dx = tx - this.x, dy = ty - this.y;
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
+            if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
+            else {
+                this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed;
+                this.angle = Math.atan2(dy, dx);
+                this.wobble += 0.4;
+            }
+        } else if (chaseTarget) {
+            let dgx = this.gx + Math.sign(chaseTarget.gx - this.gx);
+            let dgy = this.gy + Math.sign(chaseTarget.gy - this.gy);
+            if (isWall(dgx, dgy) && !isRock(dgx, dgy) && Math.random() < 0.02) {
+                setTile(dgx, dgy, 0);
+                spawnParticles(dgx * TILE_SIZE + 20, dgy * TILE_SIZE + 20, '#4a3826', 10);
+            } else if (!isWall(dgx, dgy)) {
+                this.x += Math.sign(chaseTarget.gx - this.gx) * this.speed;
+                this.y += Math.sign(chaseTarget.gy - this.gy) * this.speed;
+                this.angle = Math.atan2(chaseTarget.gy - this.gy, chaseTarget.gx - this.gx);
+            }
+        }
+    }
+
+    updateQueenAI() {
+        if (this.path.length === 0 && this.pathTimer <= 0 && Math.random() < 0.05) {
+            if (pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
+                let nx = this.gx + Math.floor(Math.random() * 5) - 2;
+                let ny = this.gy + Math.floor(Math.random() * 5) - 1;
+
+                if (ny < SURFACE_Y + 2) ny = SURFACE_Y + 2;
+
+                if (!isWall(nx, ny)) {
+                    this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                }
+                this.pathTimer = 30;
+            }
+        }
+        if (this.path.length > 0) {
+            let target = this.path[0];
+            let tx = target.x * TILE_SIZE + TILE_SIZE / 2, ty = target.y * TILE_SIZE + TILE_SIZE / 2;
+            let dx = tx - this.x, dy = ty - this.y;
+            let dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
+            if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
+            else { this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed; this.angle = Math.atan2(dy, dx); }
+        }
+    }
+
+    handlePlayerControl() {
+        let dx = 0, dy = 0;
+        let currentSpeed = this.baseSpeed;
+
+        if (keys.arrowup) dy -= currentSpeed;
+        if (keys.arrowdown) dy += currentSpeed;
+        if (keys.arrowleft) dx -= currentSpeed;
+        if (keys.arrowright) dx += currentSpeed;
+
+        if (dx !== 0 || dy !== 0) {
+            if (this.state === 'DEFENDING') this.state = 'IDLE';
+            this.x += dx; this.y += dy;
+            this.angle = Math.atan2(dy, dx);
+            this.wobble += 0.5;
+            if (Math.random() < 0.2 && this.gy >= SURFACE_Y) spawnParticles(this.x, this.y, '#4a3826', 1, 1);
+        }
+
+        if (keys[' '] && !spacePressed) {
+            spacePressed = true;
+            this.performManualAction();
+        }
+    }
+
+    performManualAction() {
+        if (this.type === 'queen') return;
+
+        let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.5) ** 2);
+        if (enemy) {
+            enemy.hp -= this.dmg; enemy.flash = 10; enemy.underAttack = 300;
+            spawnParticles(enemy.x, enemy.y, '#a8453c', 8, 6);
+            triggerShake(3);
+            const lungeDist = 10;
+            const lungeX = this.x + Math.cos(this.angle) * lungeDist;
+            const lungeY = this.y + Math.sin(this.angle) * lungeDist;
+            if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+            return;
+        }
+
+        // BUGFIX (priority order): a hungry, unfed larva under the player's feet always
+        // takes priority over picking up brood, whether or not the ant is already carrying
+        // a resource. This stops "feed" from accidentally becoming "pick up".
+        let larvaHere = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === this.gx && b.y === this.gy);
+        if (larvaHere) {
+            if (this.state === 'CARRYING_RESOURCE') {
+                larvaHere.fed = true; larvaHere.needsFood = false;
+                spawnParticles(this.x, this.y, '#7a9a5a', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed", "#7a9a5a");
+                this.carriedResource = null; this.state = 'IDLE';
+                return;
+            }
+            let itemHere = state.surfaceItems.find(i => i.x === this.gx && i.y === this.gy);
+            if (itemHere) {
+                state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere);
+                larvaHere.fed = true; larvaHere.needsFood = false;
+                spawnParticles(this.x, this.y, '#7a9a5a', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed", "#7a9a5a");
+                return;
+            }
+            if (state.resources.seeds > 0) {
+                state.resources.seeds--;
+                larvaHere.fed = true; larvaHere.needsFood = false;
+                spawnParticles(this.x, this.y, '#7a9a5a', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed", "#7a9a5a");
+                updateUI();
+                return;
+            }
+            if (state.resources.meat > 0) {
+                state.resources.meat--;
+                larvaHere.fed = true; larvaHere.needsFood = false;
+                spawnParticles(this.x, this.y, '#7a9a5a', 10, 5);
+                spawnText(this.x, this.y - 15, "Larva Fed", "#7a9a5a");
+                updateUI();
+                return;
+            }
+            // Hungry larva present but nothing to feed it with, and ant isn't carrying
+            // a resource -- fall through so the ant can still pick up brood/items normally.
+        }
+
+        let prey = state.flies.find(f => distSq(f.x, f.y, this.x, this.y) < (TILE_SIZE * 1.3) ** 2);
+        if (prey && !this.carriedResource && !this.carriedBrood) {
+            prey.hp -= this.dmg * 2;
+            prey.flash = 10;
+            spawnParticles(prey.x, prey.y, '#8a5a3a', 6, 5);
+            triggerShake(2);
+            if (prey.hp <= 0) {
+                state.flies = state.flies.filter(f => f !== prey);
+                spawnParticles(prey.x, prey.y, '#4a3728', 14, 6, null, 0.1);
+                spawnText(prey.x, prey.y - 10, 'PREY KILLED', '#a8453c');
+                let gx = Math.floor(prey.x / TILE_SIZE), gy = Math.floor(prey.y / TILE_SIZE);
+                state.surfaceItems.push({ type: 'meat', x: gx, y: gy });
+                state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
+            }
+            return;
+        }
+
+        if (this.state === 'CARRYING_DIRT') {
+            let targetGx = this.gx + Math.round(Math.cos(this.angle));
+            let targetGy = this.gy + Math.round(Math.sin(this.angle));
+            if (!isWall(targetGx, targetGy) && !state.entities.some(e => e.gx === targetGx && e.gy === targetGy)) {
+                setTile(targetGx, targetGy, 1);
+                spawnParticles(targetGx * TILE_SIZE + 20, targetGy * TILE_SIZE + 20, '#6b4a2b', 12, 3);
+                triggerShake(3);
+                spawnText(targetGx * TILE_SIZE + 20, targetGy * TILE_SIZE, "Wall Placed", "#c9a876");
+            }
+            this.state = 'IDLE';
+            return;
+        }
+
+        if (this.state === 'CARRYING_RESOURCE') {
+            let queen = state.entities.find(e => e.type === 'queen');
+            if (queen && distSq(this.x, this.y, queen.x, queen.y) < (TILE_SIZE * 1.2) ** 2) {
+                state.queenHunger = Math.min(100, state.queenHunger + 35);
+                if (this.carriedResource === 'seed') { state.resources.seeds++; spawnText(this.x, this.y - 20, "+1 Seed", "#e0954f"); }
+                if (this.carriedResource === 'meat') { state.resources.meat++; spawnText(this.x, this.y - 20, "+1 Meat", "#cf5b4f"); }
+                updateUI();
+                spawnParticles(queen.x, queen.y - 10, this.carriedResource === 'seed' ? '#e0954f' : '#cf5b4f', 12, 5);
+                spawnText(queen.x, queen.y - 35, "Queen Fed", "#6f8fa8");
+                triggerShake(1);
+                this.carriedResource = null; this.state = 'IDLE';
+                return;
+            }
+            state.surfaceItems.push({ type: this.carriedResource, x: this.gx, y: this.gy });
+            this.state = 'IDLE'; this.carriedResource = null; return;
+        }
+
+        if (this.state === 'CARRYING_BROOD') {
+            if (state.brood.some(b => b !== this.carriedBrood && !b.carriedBy && b.x === this.gx && b.y === this.gy)) {
+                spawnText(this.x, this.y - 15, "Tile occupied", "#cf5b4f", 13);
+                return;
+            }
+            this.carriedBrood.x = this.gx;
+            this.carriedBrood.y = this.gy;
+            this.carriedBrood.carriedBy = null;
+            this.carriedBrood.playerMoved = true;
+            spawnParticles(this.x, this.y, '#6f8fa8', 6, 3);
+            this.carriedBrood = null; this.state = 'IDLE';
+            return;
+        }
+
+        let itemHere2 = state.surfaceItems.find(i => i.x === this.gx && i.y === this.gy);
+        let broodHere = state.brood.find(b => !b.carriedBy && b.x === this.gx && b.y === this.gy);
+
+        if (itemHere2) {
+            this.carriedResource = itemHere2.type; this.state = 'CARRYING_RESOURCE';
+            state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere2);
+            return;
+        }
+
+        if (broodHere) {
+            this.carriedBrood = broodHere; broodHere.carriedBy = this;
+            this.state = 'CARRYING_BROOD';
+            spawnParticles(this.x, this.y, '#6f8fa8', 6, 3);
+            return;
+        }
+
+        let targetGx = this.gx + Math.round(Math.cos(this.angle));
+        let targetGy = this.gy + Math.round(Math.sin(this.angle));
+        if (isWall(targetGx, targetGy) && !isRock(targetGx, targetGy)) {
+            setTile(targetGx, targetGy, 0);
+            spawnParticles(targetGx * TILE_SIZE + 20, targetGy * TILE_SIZE + 20, '#4a3826', 15);
+            this.state = 'CARRYING_DIRT';
+        } else if (isRock(targetGx, targetGy)) {
+            spawnText(this.x, this.y - 15, "Too hard to dig", "#8a8a82", 13);
+        }
+    }
+
+    handleStateLogic() {
+        if (this.type === 'queen') return;
+
+        let distressAnt = state.entities.find(e => e.underAttack > 0 && e.type !== 'army_ant' && e !== this);
+        if (distressAnt) {
+            let dist = distSq(this.x, this.y, distressAnt.x, distressAnt.y);
+            let detectRange = this.type === 'super_major' ? 15 : 8;
+            if (dist < (TILE_SIZE * detectRange) ** 2) {
+                let shouldHelp = (distressAnt.type === 'queen') || (this.type === 'major') || (this.type === 'super_major');
+                if (shouldHelp) {
+                    if (this.state === 'MOVING_TO_JOB' || this.state === 'DIGGING' || this.state === 'HARVESTING' || this.state === 'FEEDING_LARVA' || this.state === 'FETCHING_BROOD' || this.state === 'HUNTING') {
+                        if (this.job) { this.job.assigned = false; this.job = null; }
+                        this.huntTargetId = null;
+                        this.state = 'IDLE';
+                    }
+                    if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        this.path = findPath(this.gx, this.gy, distressAnt.gx, distressAnt.gy) || [];
+                        this.pathTimer = 20;
+                    }
+                    this.alertTimer = 60;
+                    return;
+                }
+            }
+        }
+
+        // BUGFIX: attack pheromones actively summon nearby minors/majors toward the marked spot,
+        // interrupting idle wandering so drawn pheromones have a visible, immediate effect.
+        if (this.state === 'IDLE' && (this.type === 'minor' || this.type === 'major') && this.pathTimer <= 0) {
+            let attackPh = findNearestPheromone('attack', this.x, this.y, 22);
+            if (attackPh && pathfindsThisFrame < 2) {
+                let pgx = Math.floor(attackPh.x / TILE_SIZE), pgy = Math.floor(attackPh.y / TILE_SIZE);
+                let openSpot = nearestOpenTile(pgx, pgy);
+                if (openSpot) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, openSpot.x, openSpot.y) || [];
+                    this.pathTimer = 25;
+                    this.alertTimer = 40;
+                    return;
+                }
+            }
+        }
+
+        if (this.state === 'IDLE') {
+            let workersAlive = state.entities.some(e => e.type === 'minor' || e.type === 'major');
+
+            if (!this.job && (this.type === 'minor' || this.type === 'major')) {
+                let queen = state.entities.find(e => e.type === 'queen');
+                if (queen) {
+                    let misplacedBrood = state.brood.find(b => !b.carriedBy && !b.playerMoved && b.y < queen.gy - 2);
+                    if (misplacedBrood) {
+                        this.targetBroodId = misplacedBrood.id;
+                        this.state = 'FETCHING_BROOD';
+                        if (pathfindsThisFrame < 2) {
+                            pathfindsThisFrame++;
+                            this.path = findPath(this.gx, this.gy, misplacedBrood.x, misplacedBrood.y) || [];
+                            this.pathTimer = 20;
+                        }
+                        return;
+                    }
+                }
+            }
+
+            if (!this.job) {
+                let hungryLarva = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && !state.jobs.some(j => j.type === 'FEED_LARVA' && j.broodId === b.id));
+                if (hungryLarva && (this.type === 'minor' || this.type === 'major')) {
+                    state.jobs.push({ type: 'FEED_LARVA', x: hungryLarva.x, y: hungryLarva.y, broodId: hungryLarva.id, assigned: false });
+                }
+            }
+
+            // BUGFIX: hunting overhaul. Higher base chance to start a hunt, and a forage
+            // pheromone can also redirect an idle worker toward prey/food in that area.
+            if (!this.job && (this.type === 'minor' || this.type === 'major') && state.flies.length > 0) {
+                let huntedIds = state.entities.filter(e => e.huntTargetId).map(e => e.huntTargetId);
+                let foragePh = findNearestPheromone('forage', this.x, this.y, 26);
+                let searchX = foragePh ? foragePh.x : this.x;
+                let searchY = foragePh ? foragePh.y : this.y;
+                let huntChance = foragePh ? 0.35 : 0.10;
+                if (Math.random() < huntChance) {
+                    let prey = state.flies.find(f => !huntedIds.includes(f.id) && distSq(f.x, f.y, searchX, searchY) < (TILE_SIZE * 16) ** 2);
+                    if (prey) {
+                        if (!prey.id) prey.id = Math.random().toString(36).slice(2);
+                        this.huntTargetId = prey.id;
+                        this.state = 'HUNTING';
+                        if (pathfindsThisFrame < 2) {
+                            pathfindsThisFrame++;
+                            this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                            this.pathTimer = 20;
+                        }
+                        return;
+                    }
+                }
+            }
+
+            // BUGFIX: nest is well-stocked -> foragers stop taking new HARVEST jobs (dig/feed
+            // jobs still get done). Only kicks in once resources are comfortably above the caps,
+            // so colonies still forage normally most of the time.
+            let nestWellStocked = state.resources.seeds >= FORAGE_SEED_CAP && state.resources.meat >= FORAGE_MEAT_CAP && state.queenHunger > 60;
+
+            // BUGFIX: forage pheromone actively pulls idle, unassigned foragers toward the
+            // marked area (not just biasing hunt-target search) so drawing it has a visible,
+            // immediate effect even when no prey is nearby.
+            if (!this.job && !nestWellStocked && (this.type === 'minor' || this.type === 'major') && this.pathTimer <= 0) {
+                let foragePull = findNearestPheromone('forage', this.x, this.y, 26);
+                if (foragePull && pathfindsThisFrame < 2) {
+                    let pgx = Math.floor(foragePull.x / TILE_SIZE), pgy = Math.floor(foragePull.y / TILE_SIZE);
+                    let openSpot = nearestOpenTile(pgx, pgy);
+                    if (openSpot && (openSpot.x !== this.gx || openSpot.y !== this.gy)) {
+                        pathfindsThisFrame++;
+                        this.path = findPath(this.gx, this.gy, openSpot.x, openSpot.y) || [];
+                        this.pathTimer = 30;
+                        return;
+                    }
+                }
+            }
+
+            if (this.type === 'minor' || this.type === 'major' || (!workersAlive && this.type === 'super_major')) {
+                let job = state.jobs.find(j => !j.assigned && (j.type === 'DIG' || (j.type === 'HARVEST' && !nestWellStocked) || j.type === 'FEED_LARVA'));
+                if (job) this.assignJob(job);
+            }
+
+            if (this.type === 'super_major' && workersAlive && this.pathTimer <= 0 && Math.random() < 0.05) {
+                let queen = state.entities.find(e => e.type === 'queen');
+                let targetX = this.gx + Math.floor(Math.random() * 20) - 10;
+                let targetY = this.gy + Math.floor(Math.random() * 10) - 5;
+
+                if (queen) {
+                    targetX = queen.gx + Math.floor(Math.random() * 10) - 5;
+                    targetY = queen.gy + Math.floor(Math.random() * 10) - 5;
+                }
+
+                if (targetY < SURFACE_Y + 1) targetY = SURFACE_Y + 1;
+
+                if (!isWall(targetX, targetY) && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
+                    this.pathTimer = 40;
+                }
+            }
+
+            if (!this.job && this.type !== 'super_major' && this.pathTimer <= 0) {
+                // If nest is well stocked, bias idle wandering to stay near the queen
+                // instead of drifting to the surface to forage.
+                if (nestWellStocked || this.gy < SURFACE_Y) {
+                    if (Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        let queen = state.entities.find(e => e.type === 'queen');
+                        if (queen) {
+                            let nx = queen.gx + Math.floor(Math.random() * 7) - 3;
+                            let ny = queen.gy + Math.floor(Math.random() * 5) - 2;
+                            this.path = findPath(this.gx, this.gy, isWall(nx, ny) ? queen.gx : nx, isWall(nx, ny) ? queen.gy : ny) || [];
+                        }
+                        this.pathTimer = 30;
+                    }
+                } else if (Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    let nx = this.gx + Math.floor(Math.random() * 5) - 2;
+                    let ny = this.gy + Math.floor(Math.random() * 5) - 2;
+                    if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                    this.pathTimer = 30;
+                }
+            }
+        } else if (this.state === 'HUNTING') {
+            let prey = state.flies.find(f => f.id === this.huntTargetId);
+            if (!prey) { this.state = 'IDLE'; this.huntTargetId = null; return; }
+            let dist = distSq(prey.x, prey.y, this.x, this.y);
+            // BUGFIX: widened engage range (was 1.2 tiles, too small vs a fleeing target)
+            if (dist < (TILE_SIZE * 1.6) ** 2) {
+                if (this.attackTimer > 0) this.attackTimer--;
+                if (this.attackTimer <= 0) {
+                    prey.hp -= this.dmg * 1.5;
+                    prey.flash = 8;
+                    this.attackTimer = 18;
+                    spawnParticles(prey.x, prey.y, '#8a5a3a', 4, 4);
+                    triggerShake(1);
+                }
+                this.angle = Math.atan2(prey.y - this.y, prey.x - this.x);
+                if (prey.hp <= 0) {
+                    state.flies = state.flies.filter(f => f !== prey);
+                    spawnParticles(prey.x, prey.y, '#4a3728', 14, 6, null, 0.1);
+                    spawnText(prey.x, prey.y - 10, 'PREY KILLED', '#a8453c');
+                    let gx = Math.floor(prey.x / TILE_SIZE), gy = Math.floor(prey.y / TILE_SIZE);
+                    state.surfaceItems.push({ type: 'meat', x: gx, y: gy });
+                    state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
+                    this.state = 'IDLE'; this.huntTargetId = null;
+                }
+                // Close the gap continuously while in range, rather than relying on pathing.
+                if (dist > (TILE_SIZE * 0.6) ** 2) {
+                    let a = Math.atan2(prey.y - this.y, prey.x - this.x);
+                    this.x += Math.cos(a) * this.speed * 0.6;
+                    this.y += Math.sin(a) * this.speed * 0.6;
+                }
+            } else if (this.pathTimer <= 0) {
+                // BUGFIX: re-path far more reliably (was 20% chance/frame, causing ants to stall)
+                if (pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || [];
+                    this.pathTimer = 10;
+                    if (this.path.length === 0 && !(this.gx === Math.floor(prey.x/TILE_SIZE) && this.gy === Math.floor(prey.y/TILE_SIZE))) {
+                        this.state = 'IDLE'; this.huntTargetId = null;
+                    }
+                }
+            }
+        } else if (this.state === 'MOVING_TO_JOB') {
+            if (Math.sqrt(distSq(this.gx, this.gy, this.job.x, this.job.y)) <= 1) {
+                if (this.job.type === 'DIG') { this.state = 'DIGGING'; this.digTimer = 20; }
+                else if (this.job.type === 'HARVEST') { this.state = 'HARVESTING'; this.digTimer = 10; }
+                else if (this.job.type === 'FEED_LARVA') { this.state = 'FEEDING_LARVA'; this.digTimer = 15; }
+            } else {
+                this.assignJob(this.job);
+            }
+        } else if (this.state === 'DIGGING') {
+            this.digTimer--;
+            if (this.digTimer % 5 === 0) spawnParticles(this.x, this.y, '#4a3826', 2);
+            if (this.digTimer <= 0) {
+                setTile(this.job.x, this.job.y, 0);
+                spawnParticles(this.job.x * TILE_SIZE + 20, this.job.y * TILE_SIZE + 20, '#4a3826', 15);
+                state.jobs = state.jobs.filter(j => j !== this.job);
+                this.job = null; this.state = 'CARRYING_DIRT';
+                let queen = state.entities.find(e => e.type === 'queen');
+                if (queen && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || [];
+                } else { this.path = []; }
+            }
+        } else if (this.state === 'CARRYING_DIRT') {
+            if (this.gy < SURFACE_Y) {
+                this.state = 'IDLE'; spawnParticles(this.x, this.y, '#6b4a2b', 8);
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
+                let queen = state.entities.find(e => e.type === 'queen');
+                this.path = queen ? (findPath(this.gx, this.gy, queen.gx, SURFACE_Y - 2) || []) : [];
+                this.pathTimer = 30;
+            }
+        } else if (this.state === 'HARVESTING') {
+            this.digTimer--;
+            if (this.digTimer <= 0) {
+                let stillThere = state.surfaceItems.some(i => i.x === this.job.x && i.y === this.job.y);
+                state.jobs = state.jobs.filter(j => j !== this.job);
+                if (!stillThere) { this.job = null; this.state = 'IDLE'; return; }
+                state.surfaceItems = state.surfaceItems.filter(i => !(i.x === this.job.x && i.y === this.job.y));
+                this.carriedResource = this.job.resourceType;
+                spawnParticles(this.x, this.y, this.carriedResource === 'seed' ? '#e0954f' : '#cf5b4f', 10);
+                this.job = null; this.state = 'CARRYING_RESOURCE';
+                let queen = state.entities.find(e => e.type === 'queen');
+                if (queen && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                }
+            }
+        } else if (this.state === 'FEEDING_LARVA') {
+            this.digTimer--;
+            if (this.digTimer <= 0) {
+                let brood = state.brood.find(b => b.id === this.job.broodId);
+                state.jobs = state.jobs.filter(j => j !== this.job);
+                if (brood && brood.stage === 'larva' && !brood.fed) {
+                    brood.fed = true; brood.needsFood = false;
+                    spawnParticles(brood.x * TILE_SIZE + 20, brood.y * TILE_SIZE + 20, '#7a9a5a', 10, 5);
+                    spawnText(brood.x * TILE_SIZE + 20, brood.y * TILE_SIZE, "Larva Fed", "#7a9a5a");
+                    if (state.resources.seeds > 0) state.resources.seeds--;
+                    else if (state.resources.meat > 0) state.resources.meat--;
+                    updateUI();
+                }
+                this.job = null; this.state = 'IDLE';
+            }
+        } else if (this.state === 'CARRYING_RESOURCE') {
+            let queen = state.entities.find(e => e.type === 'queen');
+            if (!queen) { this.state = 'IDLE'; this.carriedResource = null; return; }
+            if (distSq(this.x, this.y, queen.x, queen.y) < (TILE_SIZE * 1.2) ** 2) {
+                state.queenHunger = Math.min(100, state.queenHunger + 35);
+                if (this.carriedResource === 'seed') { state.resources.seeds++; spawnText(this.x, this.y - 20, "+1 Seed", "#e0954f"); }
+                if (this.carriedResource === 'meat') { state.resources.meat++; spawnText(this.x, this.y - 20, "+1 Meat", "#cf5b4f"); }
+                updateUI();
+                this.carriedResource = null; this.state = 'IDLE';
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
+                this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                this.pathTimer = 30;
+            }
+        } else if (this.state === 'FETCHING_BROOD') {
+            let b = state.brood.find(br => br.id === this.targetBroodId && !br.carriedBy);
+            if (!b || b.playerMoved) {
+                this.state = 'IDLE';
+            } else if (this.gx === b.x && this.gy === b.y) {
+                this.carriedBrood = b;
+                b.carriedBy = this;
+                this.state = 'CARRYING_BROOD';
+                this.path = [];
+            } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
+                this.path = findPath(this.gx, this.gy, b.x, b.y) || [];
+                this.pathTimer = 20;
+            }
+        } else if (this.state === 'CARRYING_BROOD') {
+            let queen = state.entities.find(e => e.type === 'queen');
+            if (queen) {
+                if (this.gy >= queen.gy - 1) {
+                    if (!state.brood.some(b => b !== this.carriedBrood && !b.carriedBy && b.x === this.gx && b.y === this.gy)) {
+                        this.carriedBrood.x = this.gx;
+                        this.carriedBrood.y = this.gy;
+                        this.carriedBrood.carriedBy = null;
+                        this.carriedBrood = null;
+                        this.state = 'IDLE';
+                    } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++;
+                        let nx = this.gx + Math.floor(Math.random() * 3) - 1;
+                        let ny = this.gy + Math.floor(Math.random() * 3) - 1;
+                        if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                        this.pathTimer = 10;
+                    }
+                } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    this.path = findPath(this.gx, this.gy, queen.gx, queen.gy) || [];
+                    this.pathTimer = 30;
+                }
+            } else {
+                this.carriedBrood.x = this.gx;
+                this.carriedBrood.y = this.gy;
+                this.carriedBrood.carriedBy = null;
+                this.carriedBrood = null;
+                this.state = 'IDLE';
+            }
+        }
+    }
+
+    assignJob(job) {
+        if (this.pathTimer > 0 || pathfindsThisFrame >= 2) return;
+
+        job.assigned = true; this.job = job;
+        let targetX = job.x, targetY = job.y;
+        if (job.type === 'DIG') {
+            let adj = [
+                { x: job.x, y: job.y - 1 }, { x: job.x, y: job.y + 1 },
+                { x: job.x - 1, y: job.y }, { x: job.x + 1, y: job.y }
+            ].find(n => !isWall(n.x, n.y));
+            if (adj) { targetX = adj.x; targetY = adj.y; }
+        }
+
+        pathfindsThisFrame++;
+        this.path = findPath(this.gx, this.gy, targetX, targetY) || [];
+        this.pathTimer = 15;
+
+        if (this.path.length > 0 || (this.gx === targetX && this.gy === targetY)) {
+            this.state = 'MOVING_TO_JOB';
+        } else {
+            job.assigned = false;
+            this.job = null;
+            job.failCount = (job.failCount || 0) + 1;
+            if (job.failCount > 3) {
+                state.jobs = state.jobs.filter(j => j !== job);
+            }
+        }
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        let scaleX = 1, scaleY = 1;
+        if (this.path.length > 0 || (state.controlledAnt === this && (keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright))) {
+            scaleX = 1 + Math.sin(this.wobble * 2) * 0.15;
+            scaleY = 1 - Math.sin(this.wobble * 2) * 0.15;
+            ctx.rotate(this.angle + Math.sin(this.wobble) * 0.1);
+        } else {
+            ctx.rotate(this.angle);
+        }
+        ctx.scale(scaleX, scaleY);
+
+        let asset = ASSETS[this.type];
+        let size = this.type === 'queen' ? TILE_SIZE * 1.5 : this.type === 'super_major' ? TILE_SIZE * 1.2 : TILE_SIZE;
+
+        let drawW = size, drawH = size;
+        if (asset.loaded && asset.img.width && asset.img.height) {
+            let aspect = asset.img.width / asset.img.height;
+            if (aspect > 1) drawH = size / aspect; else drawW = size * aspect;
+            ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
+        } else {
+            ctx.fillStyle = asset.fallback;
+            ctx.beginPath(); ctx.ellipse(0, 0, size / 2, size / 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(size / 3, -2, 4, 4);
+        }
+
+        if (this.flash > 0) {
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.fillStyle = 'rgba(207, 91, 79, 0.55)';
+            ctx.fillRect(-drawW / 2, -drawH / 2, drawW, drawH);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        if (this.state === 'CARRYING_DIRT') {
+            if (ASSETS.dirt_ball.loaded) ctx.drawImage(ASSETS.dirt_ball.img, drawW / 4, -drawH / 4, drawW / 2, drawH / 2);
+            else { ctx.fillStyle = '#6b4a2b'; ctx.beginPath(); ctx.arc(drawW / 2, 0, 6, 0, Math.PI * 2); ctx.fill(); }
+        } else if (this.state === 'CARRYING_RESOURCE') {
+            drawFoodIcon(drawW / 2, 0, this.carriedResource, 16);
+        } else if (this.state === 'CARRYING_BROOD' && this.carriedBrood) {
+            drawBroodShape(drawW / 2, 0, this.carriedBrood.stage);
+        }
+
+        if (state.controlledAnt === this) {
+            ctx.strokeStyle = '#7a9a5a'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(0, 0, size / 1.2, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = 'rgba(122,154,90,0.35)';
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(TILE_SIZE, 0); ctx.stroke();
+        }
+
+        if (this.hp < this.maxHp) {
+            ctx.fillStyle = 'rgba(168,69,60,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30, 4);
+            ctx.fillStyle = 'rgba(122,154,90,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30 * (this.hp / this.maxHp), 4);
+        }
+
+        ctx.restore();
+
+        if (this.alertTimer > 0) {
+            ctx.fillStyle = '#e0954f'; ctx.font = "700 18px Inter, Arial";
+            ctx.fillText("!", this.x - 4, this.y - size / 2 - 15);
+        }
+    }
+}
+
+// BUGFIX/FEATURE: unified food-icon drawing using the new nut/meat art assets, sized to
+// roughly 60% of a tile (matching how carried resources and ground pickups should read at
+// a glance) with graceful vector fallback if the images fail to load.
+function drawFoodIcon(x, y, type, size) {
+    ctx.save();
+    ctx.translate(x, y);
+    const asset = type === 'seed' ? ASSETS.nut : ASSETS.meat_food;
+    if (asset && asset.loaded && asset.img.width && asset.img.height) {
+        let aspect = asset.img.width / asset.img.height;
+        let w = size, h = size;
+        if (aspect > 1) h = size / aspect; else w = size * aspect;
+        ctx.drawImage(asset.img, -w / 2, -h / 2, w, h);
+    } else {
+        ctx.fillStyle = type === 'seed' ? '#e0954f' : '#cf5b4f';
+        ctx.beginPath(); ctx.arc(0, 0, size / 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+}
+
+function drawBroodShape(x, y, stage) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (stage === 'egg') {
+        ctx.fillStyle = '#e8ecec';
+        ctx.beginPath(); ctx.ellipse(0, 0, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#6f8fa8'; ctx.lineWidth = 1; ctx.stroke();
+    } else if (stage === 'larva') {
+        ctx.fillStyle = '#ede6cf';
+        ctx.beginPath(); ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#b3a274'; ctx.lineWidth = 1;
+        for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * 3, -4); ctx.lineTo(i * 3, 4); ctx.stroke(); }
+    } else if (stage === 'pupa') {
+        ctx.fillStyle = '#cdb98c';
+        ctx.beginPath(); ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#7d6a48'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.restore();
+}
+
+/**
+ * GAME LOGIC
+ */
+function respawnSeeds() {
+    let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
+    let toSpawn = 3 + Math.floor(Math.random() * 4);
+    let spawned = 0;
+    for (let i = 0; i < toSpawn && state.surfaceItems.length < 150; i++) {
+        let rx = originX + Math.floor((Math.random() - 0.5) * 160);
+        let surf = surfaceHeightAt(rx);
+        let ry = surf - 1 - Math.floor(Math.random() * 4);
+        if (isWall(rx, ry)) continue;
+        state.surfaceItems.push({ type: 'seed', x: rx, y: ry });
+        state.jobs.push({ type: 'HARVEST', x: rx, y: ry, resourceType: 'seed', assigned: false });
+        spawned++;
+    }
+    if (spawned > 0) toast('New seeds have sprouted nearby');
+}
+
+function layEgg(willHatchAs = 'minor', silent = false) {
+    let queen = state.entities.find(e => e.type === 'queen');
+    if (!queen) return null;
+    let gx = queen.gx, gy = queen.gy;
+    let spots = [
+        { x: gx, y: gy + 1 }, { x: gx + 1, y: gy }, { x: gx - 1, y: gy }, { x: gx, y: gy - 1 },
+        { x: gx + 1, y: gy + 1 }, { x: gx - 1, y: gy + 1 }
+    ].filter(s => !isWall(s.x, s.y) && !state.brood.some(b => b.x === s.x && b.y === s.y));
+    let spot = spots[Math.floor(Math.random() * spots.length)] || { x: gx, y: gy };
+    let egg = makeBrood(spot.x, spot.y, willHatchAs);
+    state.brood.push(egg);
+    spawnParticles(spot.x * TILE_SIZE + 20, spot.y * TILE_SIZE + 20, '#e8ecec', 8, 3);
+    if (!silent) spawnText(queen.x, queen.y - 30, "Egg Laid", "#e8ecec", 14);
+    updateUI();
+    return egg;
+}
+
+function updateBrood() {
+    for (let b of state.brood) {
+        if (b.carriedBy) continue;
+        b.timer--;
+
+        if (b.stage === 'larva' && !b.needsFood && !b.fed && b.timer <= LARVA_TIME * 0.5) {
+            b.needsFood = true;
+            let bx = b.x * TILE_SIZE + 20, by = b.y * TILE_SIZE + 20;
+            spawnText(bx, by - 10, "Feed me", "#e0954f", 13);
+        }
+
+        if (b.timer <= 0) {
+            if (b.stage === 'egg') {
+                b.stage = 'larva'; b.timer = LARVA_TIME; b.needsFood = false; b.fed = false;
+                spawnParticles(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, '#ede6cf', 8, 3);
+            } else if (b.stage === 'larva') {
+                if (b.needsFood && !b.fed) { b.timer = 30; continue; }
+                b.stage = 'pupa'; b.timer = PUPA_TIME;
+                spawnParticles(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, '#cdb98c', 8, 3);
+            } else if (b.stage === 'pupa') {
+                let hatchType = b.willHatchAs || 'minor';
+                state.entities.push(new Ant(hatchType, b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20));
+                spawnParticles(b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, '#e0954f', 16, 5);
+                spawnText(b.x * TILE_SIZE + 20, b.y * TILE_SIZE, hatchType.replace('_', ' ').toUpperCase() + " HATCHED", "#7a9a5a", 15);
+                triggerShake(2);
+                b._hatched = true;
+            }
+        }
+    }
+    state.brood = state.brood.filter(b => !b._hatched);
+    updateUI();
+}
+
+function triggerRaid() {
+    state.isRaidActive = true;
+    state.postBattleTimer = 0;
+    document.getElementById('wave-num').innerText = state.wave;
+    document.getElementById('raid-warning').style.display = 'flex';
+    triggerShake(20);
+    toast('Wave ' + state.wave + ': army ants are converging on the nest');
+
+    let antCount = Math.round(1 + Math.pow(state.wave, 1.3) * 0.8);
+
+    let queen = state.entities.find(e => e.type === 'queen');
+    let originGx = queen ? queen.gx : 0;
+
+    for (let i = 0; i < antCount; i++) {
+        setTimeout(() => {
+            if (!gameRunning) return;
+            let angle = Math.random() * Math.PI * 2;
+            let dist = 24 + Math.random() * 10;
+            let startGx = originGx + Math.round(Math.cos(angle) * dist);
+
+            let surf = surfaceHeightAt(startGx);
+            let startGy = surf - 1;
+
+            state.entities.push(new Ant('army_ant', startGx * TILE_SIZE + 20, startGy * TILE_SIZE + 20));
+        }, i * 400);
+    }
+
+    setTimeout(() => {
+        if (!gameRunning) return;
+        state.isRaidActive = false;
+        state.postBattleTimer = 600;
+        document.getElementById('raid-warning').style.display = 'none';
+        state.wave++;
+        spawnText(canvas.width / 2, canvas.height / 2, "WAVE SURVIVED", "#a8453c", 20);
+    }, antCount * 400 + 4000);
+}
+
+
+/**
+ * INPUT HANDLING
+ */
+function setTool(tool) {
+    state.activeTool = tool;
+    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`tool-${tool}`).classList.add('active');
+}
+document.querySelectorAll('.tool-btn').forEach(btn => {
+    btn.addEventListener('click', () => setTool(btn.dataset.tool));
+});
+
+function getWorldPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
+    const cx = (mouseX - canvas.width / 2) / camera.zoom + (canvas.width / 2 + camera.x);
+    const cy = (mouseY - canvas.height / 2) / camera.zoom + (canvas.height / 2 + camera.y);
+    return { cx, cy, gx: Math.floor(cx / TILE_SIZE), gy: Math.floor(cy / TILE_SIZE) };
+}
+
+canvas.addEventListener('mousedown', (e) => { if (gameRunning) { state.isDrawing = true; handleInput(e); } });
+canvas.addEventListener('mousemove', (e) => { if (gameRunning && state.isDrawing) handleInput(e); });
+canvas.addEventListener('mouseup', () => { if (state) state.isDrawing = false; });
+
+function handleInput(e) {
+    const { cx, cy, gx, gy } = getWorldPos(e);
+
+    if (state.activeTool === 'pointer' && e.type === 'mousedown') {
+        let clickedAnt = state.entities.find(ant => distSq(ant.x, ant.y, cx, cy) < TILE_SIZE * TILE_SIZE);
+
+        if (clickedAnt && clickedAnt.type !== 'army_ant') {
+            state.controlledAnt = clickedAnt;
+            if (clickedAnt.job) { clickedAnt.job.assigned = false; clickedAnt.job = null; }
+            clickedAnt.path = [];
+            document.getElementById('context-menu-title').textContent =
+                (clickedAnt.type === 'super_major' ? 'Super Major' : clickedAnt.type[0].toUpperCase() + clickedAnt.type.slice(1)) + ' Selected';
+            document.getElementById('plug-btn').style.display = clickedAnt.type === 'super_major' ? 'block' : 'none';
+            document.getElementById('context-menu').style.display = (clickedAnt.type === 'super_major' || clickedAnt.type === 'major') ? 'flex' : 'none';
+            onTutorialEvent('select-ant', clickedAnt);
+            return;
+        } else if (!clickedAnt) {
+            state.controlledAnt = null;
+            document.getElementById('context-menu').style.display = 'none';
+        }
+
+        if (isWall(gx, gy) && !isRock(gx, gy)) {
+            let isExposed = !isWall(gx, gy - 1) || !isWall(gx, gy + 1) || !isWall(gx - 1, gy) || !isWall(gx + 1, gy);
+            if (isExposed && !state.jobs.some(j => j.x === gx && j.y === gy && j.type === 'DIG')) {
+                state.jobs.push({ type: 'DIG', x: gx, y: gy, assigned: false });
+                spawnParticles(cx, cy, '#4a3826', 5);
+                onTutorialEvent('queue-dig');
+            }
+        }
+    } else if (state.activeTool !== 'pointer') {
+        state.pheromones.push({ x: cx, y: cy, type: state.activeTool, birthTime: state.time });
+        onTutorialEvent('place-pheromone', state.activeTool);
+    }
+}
+
+document.getElementById('plug-btn').addEventListener('click', () => {
+    if (state.controlledAnt && state.controlledAnt.type === 'super_major') {
+        state.controlledAnt.state = state.controlledAnt.state === 'DEFENDING' ? 'IDLE' : 'DEFENDING';
+        if (state.controlledAnt.state === 'DEFENDING') {
+            state.controlledAnt.x = state.controlledAnt.gx * TILE_SIZE + TILE_SIZE / 2;
+            state.controlledAnt.y = state.controlledAnt.gy * TILE_SIZE + TILE_SIZE / 2;
+            state.controlledAnt.path = [];
+            triggerShake(5);
+        }
+    }
+});
+
+document.getElementById('release-btn').addEventListener('click', () => {
+    state.controlledAnt = null;
+    document.getElementById('context-menu').style.display = 'none';
+});
+
+function buyAnt(type, seedCost, meatCost) {
+    if (state.resources.seeds >= seedCost && state.resources.meat >= meatCost) {
+        state.resources.seeds -= seedCost; state.resources.meat -= meatCost;
+        let egg = layEgg(type, true);
+        if (egg) {
+            let queen = state.entities.find(e => e.type === 'queen');
+            spawnParticles(queen.x, queen.y, '#f2e9d8', 15);
+            spawnText(queen.x, queen.y - 30, (type === 'super_major' ? 'Super Major' : type[0].toUpperCase() + type.slice(1)) + " Egg Laid", "#6f8fa8", 14);
+        }
+        updateUI();
+        onTutorialEvent('spawn-ant', type);
+    }
+}
+
+document.getElementById('spawn-minor').onclick = () => buyAnt('minor', 2, 0);
+document.getElementById('spawn-major').onclick = () => buyAnt('major', 3, 1);
+document.getElementById('spawn-super').onclick = () => buyAnt('super_major', 4, 2);
+
+function updateUI() {
+    if (!state) return;
+    document.getElementById('count-seeds').innerText = state.resources.seeds;
+    document.getElementById('count-meat').innerText = state.resources.meat;
+    document.getElementById('count-brood').innerText = state.brood.length;
+    let pop = state.entities.filter(e => e.type !== 'army_ant').length;
+    document.getElementById('count-pop').innerText = pop;
+    if (pop > peakPopulation) peakPopulation = pop;
+    document.getElementById('spawn-minor').disabled = state.resources.seeds < 2;
+    document.getElementById('spawn-major').disabled = state.resources.seeds < 3 || state.resources.meat < 1;
+    document.getElementById('spawn-super').disabled = state.resources.seeds < 4 || state.resources.meat < 2;
+    document.getElementById('queen-hunger-fill').style.width = Math.max(0, state.queenHunger) + '%';
+    let hungerFill = document.getElementById('queen-hunger-fill');
+    hungerFill.style.background = state.queenHunger < 30 ? 'var(--brick)' : (state.queenHunger < 60 ? 'var(--clay)' : 'var(--moss)');
+}
+
+function updateActionPrompt() {
+    const el = document.getElementById('action-prompt');
+    if (!state.controlledAnt) { el.style.display = 'none'; return; }
+    const ant = state.controlledAnt;
+    if (ant.type === 'queen') { el.style.display = 'none'; return; }
+
+    let msg = null;
+    let enemy = state.entities.find(e => e.type === 'army_ant' && e.hp > 0 && distSq(e.x, e.y, ant.x, ant.y) < (TILE_SIZE * 1.5) ** 2);
+    let queen = state.entities.find(e => e.type === 'queen');
+    let onQueen = queen && distSq(ant.x, ant.y, queen.x, queen.y) < (TILE_SIZE * 1.2) ** 2;
+    let broodHere = state.brood.find(b => !b.carriedBy && b.x === ant.gx && b.y === ant.gy);
+    let itemHere = state.surfaceItems.find(i => i.x === ant.gx && i.y === ant.gy);
+    let larvaHere = state.brood.find(b => !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === ant.gx && b.y === ant.gy);
+    let prey = state.flies.find(f => distSq(f.x, f.y, ant.x, ant.y) < (TILE_SIZE * 1.3) ** 2);
+
+    if (enemy) msg = "Space: Attack army ant";
+    else if (larvaHere && (ant.state === 'CARRYING_RESOURCE' || itemHere || state.resources.seeds > 0 || state.resources.meat > 0)) msg = "Space: Feed larva";
+    else if (prey && ant.state === 'IDLE') msg = "Space: Attack prey (hunt for meat)";
+    else if (ant.state === 'CARRYING_DIRT') msg = "Space: Place wall";
+    else if (ant.state === 'CARRYING_RESOURCE' && onQueen) msg = "Space: Feed the queen";
+    else if (ant.state === 'CARRYING_RESOURCE') msg = "Space: Drop resource";
+    else if (ant.state === 'CARRYING_BROOD') msg = "Space: Set down brood";
+    else if (broodHere) msg = "Space: Pick up brood";
+    else if (itemHere) msg = "Space: Pick up " + itemHere.type;
+    else msg = null;
+
+    if (msg) { el.textContent = msg; el.style.display = 'block'; }
+    else el.style.display = 'none';
+}
+
+function updateCompass() {
+    let ref = state.controlledAnt || state.entities.find(e => e.type === 'queen');
+    if (!ref) return;
+    document.getElementById('compass').textContent =
+        `${Math.round(ref.x / TILE_SIZE)}, ${Math.round(ref.y / TILE_SIZE)}  ·  Wave ${state.wave}`;
+}
+
+/**
+ * MAIN LOOP
+ */
+function update() {
+    state.time += 0.05;
+    pathfindsThisFrame = 0;
+
+    if (state.controlledAnt) {
+        let targetCamX = state.controlledAnt.x - (canvas.width / 2) / camera.zoom;
+        let targetCamY = state.controlledAnt.y - (canvas.height / 2) / camera.zoom;
+        camera.x += (targetCamX - camera.x) * 0.1;
+        camera.y += (targetCamY - camera.y) * 0.1;
+    } else {
+        let camSpeed = 10 / camera.zoom;
+        if (keys.w) camera.y -= camSpeed;
+        if (keys.s) camera.y += camSpeed;
+        if (keys.a) camera.x -= camSpeed;
+        if (keys.d) camera.x += camSpeed;
+    }
+
+    const gxMin = Math.floor((camera.x - TILE_SIZE * 3) / TILE_SIZE);
+    const gxMax = Math.ceil((camera.x + canvas.width / camera.zoom + TILE_SIZE * 3) / TILE_SIZE);
+    const gyMin = Math.floor((camera.y - TILE_SIZE * 3) / TILE_SIZE);
+    const gyMax = Math.ceil((camera.y + canvas.height / camera.zoom + TILE_SIZE * 3) / TILE_SIZE);
+
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE);
+    const cxMax = Math.floor(gxMax / CHUNK_SIZE);
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE);
+    const cyMax = Math.floor(gyMax / CHUNK_SIZE);
+
+    for (let ccy = cyMin; ccy <= cyMax; ccy++) {
+        for (let ccx = cxMin; ccx <= cxMax; ccx++) {
+            ensureChunk(ccx, ccy);
+        }
+    }
+
+    state.entities.forEach(ant => ant.update());
+    state.entities = state.entities.filter(ant => {
+        if (ant.hp <= 0) {
+            spawnParticles(ant.x, ant.y, '#a8453c', 22, 5, null, 0.05);
+            spawnText(ant.x, ant.y, ant.type === 'queen' ? "QUEEN DIED" : "DEAD", "#a8453c", ant.type === 'queen' ? 22 : 16);
+            triggerShake(ant.type === 'queen' ? 15 : 4);
+
+            state.splats.push({ x: ant.x, y: ant.y, size: Math.random() * 15 + 10 });
+            if (state.splats.length > 50) state.splats.shift();
+
+            if (ant.carriedBrood) { ant.carriedBrood.carriedBy = null; ant.carriedBrood.x = ant.gx; ant.carriedBrood.y = ant.gy; }
+            if (ant.carriedResource) state.surfaceItems.push({ type: ant.carriedResource, x: ant.gx, y: ant.gy });
+
+            if (ant === state.controlledAnt) {
+                state.controlledAnt = null;
+                document.getElementById('context-menu').style.display = 'none';
+            }
+            if (ant.type === 'army_ant') {
+                state.surfaceItems.push({ type: 'meat', x: ant.gx, y: ant.gy });
+                state.jobs.push({ type: 'HARVEST', x: ant.gx, y: ant.gy, resourceType: 'meat', assigned: false });
+            }
+            if (ant.type === 'queen' && !state.gameOver) {
+                state.gameOver = true;
+                toast('The queen has died. No more eggs will be laid.');
+                setTimeout(() => endGame(), 1400);
+            }
+            return false;
+        }
+        return true;
+    });
+
+    state.flies.forEach(f => f.update());
+    if (Math.random() < 0.012) spawnPrey();
+
+    state.pheromones = state.pheromones.filter(p => (state.time - p.birthTime) < 500);
+    state.particles.forEach(p => p.update());
+    state.particles = state.particles.filter(p => p.life > 0);
+    state.floatingTexts.forEach(t => t.update());
+    state.floatingTexts = state.floatingTexts.filter(t => t.life > 0);
+
+    state.seedRespawnTimer--;
+    if (state.seedRespawnTimer <= 0) { respawnSeeds(); state.seedRespawnTimer = 900; }
+
+    let queen = state.entities.find(e => e.type === 'queen');
+    if (queen) {
+        state.queenHunger -= state.queenHungerDrain;
+        if (state.queenHunger <= 0) { state.queenHunger = 0; queen.hp -= 0.03; }
+        if (state.queenHunger > 25) {
+            state.nextEggTimer--;
+            if (state.nextEggTimer <= 0) {
+                layEgg('minor');
+                state.nextEggTimer = 600 + Math.floor(Math.random() * 300);
+            }
+        }
+    }
+    updateBrood();
+
+    if (!tutorialActive || tutorialAllowsRaids) {
+        state.raidTimer--;
+        if (state.raidTimer <= 0) { triggerRaid(); state.raidTimer = 3600; }
+    }
+    if (state.postBattleTimer > 0) state.postBattleTimer--;
+    if (state.shake > 0) { state.shake *= 0.9; if (state.shake < 0.5) state.shake = 0; }
+
+    updateActionPrompt();
+    if (Math.floor(state.time * 100) % 20 === 0) { updateUI(); updateCompass(); }
+
+    updateTutorialPositions();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+
+    let dx = (Math.random() - 0.5) * state.shake;
+    let dy = (Math.random() - 0.5) * state.shake;
+
+    let camX = Math.round(camera.x);
+    let camY = Math.round(camera.y);
+
+    ctx.translate(Math.floor(canvas.width / 2 + dx), Math.floor(canvas.height / 2 + dy));
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.translate(-Math.floor(canvas.width / 2 + camX), -Math.floor(canvas.height / 2 + camY));
+
+    const viewLeft = camera.x - TILE_SIZE * 3;
+    const viewRight = camera.x + canvas.width / camera.zoom + TILE_SIZE * 3;
+    const viewTop = camera.y - TILE_SIZE * 3;
+    const viewBottom = camera.y + canvas.height / camera.zoom + TILE_SIZE * 3;
+
+    const gxMin = Math.floor(viewLeft / TILE_SIZE);
+    const gxMax = Math.ceil(viewRight / TILE_SIZE);
+    const gyMin = Math.floor(viewTop / TILE_SIZE);
+    const gyMax = Math.ceil(viewBottom / TILE_SIZE);
+
+    let skyGrad = ctx.createLinearGradient(0, (SURFACE_Y - 15) * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE);
+    skyGrad.addColorStop(0, '#7d9a52');
+    skyGrad.addColorStop(1, '#6a8641');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE - gyMin * TILE_SIZE));
+
+    ctx.fillStyle = '#100d09';
+    ctx.fillRect(gxMin * TILE_SIZE, Math.max(gyMin, SURFACE_Y) * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, (gyMax - gyMin + 1) * TILE_SIZE);
+
+    for (let gy = gyMin; gy <= gyMax; gy++) {
+        for (let gx = gxMin; gx <= gxMax; gx++) {
+            const t = getTile(gx, gy);
+            if (t === 1) {
+                if (ASSETS.dirt_tile.loaded) {
+                    ctx.drawImage(ASSETS.dirt_tile.img, gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                } else {
+                    ctx.fillStyle = ASSETS.dirt_tile.fallback;
+                    ctx.fillRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.strokeRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                }
+            } else if (t === 2) {
+                ctx.fillStyle = '#33333a';
+                ctx.beginPath(); ctx.arc(gx * TILE_SIZE + 20, gy * TILE_SIZE + 20, 19, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#4b4b54';
+                ctx.beginPath(); ctx.arc(gx * TILE_SIZE + 14, gy * TILE_SIZE + 14, 6, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+    }
+
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE);
+    const cxMax = Math.floor(gxMax / CHUNK_SIZE);
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE);
+    const cyMax = Math.floor(gyMax / CHUNK_SIZE);
+
+    for (let ccy = cyMin; ccy <= cyMax; ccy++) {
+        for (let ccx = cxMin; ccx <= cxMax; ccx++) {
+            const decos = decorations.get(chunkKey(ccx, ccy));
+            if (!decos) continue;
+            for (const d of decos) {
+                if (d.x < gxMin || d.x > gxMax || d.y < gyMin || d.y > gyMax) continue;
+                drawDecoration(d);
+            }
+        }
+    }
+
+    function inView(x, y) {
+        return x >= viewLeft && x <= viewRight && y >= viewTop && y <= viewBottom;
+    }
+
+    ctx.fillStyle = 'rgba(140, 40, 30, 0.55)';
+    state.splats.forEach(s => {
+        if (inView(s.x, s.y)) { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); ctx.fill(); }
+    });
+
+    ctx.fillStyle = 'rgba(224, 149, 79, 0.28)';
+    state.jobs.forEach(job => {
+        if (job.type === 'DIG' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    });
+    ctx.fillStyle = 'rgba(122, 154, 90, 0.22)';
+    state.jobs.forEach(job => {
+        if (job.type === 'FEED_LARVA' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    });
+
+    state.pheromones.forEach(p => {
+        if (!inView(p.x, p.y)) return;
+        let age = state.time - p.birthTime;
+        let alpha = Math.max(0, 1 - (age / 500)) * 0.55;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.type === 'forage' ? '#7a9a5a' : '#a8453c';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.globalAlpha = 1.0;
+
+    let pulse = Math.abs(Math.sin(state.time)) * 4;
+    state.surfaceItems.forEach(item => {
+        let ix = item.x * TILE_SIZE + TILE_SIZE / 2;
+        let iy = item.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(ix, iy)) return;
+        ctx.fillStyle = item.type === 'seed' ? `rgba(224, 149, 79, 0.22)` : `rgba(207, 91, 79, 0.22)`;
+        ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE / 2.6 + pulse, 0, Math.PI * 2); ctx.fill();
+        drawFoodIcon(ix, iy, item.type, TILE_SIZE * 0.6);
+    });
+
+    state.brood.forEach(b => {
+        if (b.carriedBy) return;
+        let bx = b.x * TILE_SIZE + TILE_SIZE / 2, by = b.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(bx, by)) return;
+        if (b.needsFood && !b.fed) {
+            ctx.globalAlpha = 0.25 + Math.abs(Math.sin(state.time * 3)) * 0.25;
+            ctx.fillStyle = '#e0954f';
+            ctx.beginPath(); ctx.arc(bx, by, TILE_SIZE / 2, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+        drawBroodShape(bx, by, b.stage);
+    });
+
+    state.flies.forEach(f => { if (inView(f.x, f.y)) f.draw(); });
+    state.entities.forEach(ant => { if (inView(ant.x, ant.y)) ant.draw(); });
+    state.particles.forEach(p => { if (inView(p.x, p.y)) p.draw(); });
+    state.floatingTexts.forEach(t => { if (inView(t.x, t.y)) t.draw(); });
+
+    ctx.restore();
+}
+
+function drawDecoration(d) {
+    const px = d.x * TILE_SIZE + TILE_SIZE / 2, py = d.y * TILE_SIZE + TILE_SIZE / 2;
+    if (d.type === 'grass') {
+        ctx.strokeStyle = '#42621f'; ctx.lineWidth = 2;
+        for (let i = -1; i <= 1; i++) {
+            ctx.beginPath(); ctx.moveTo(px + i * 5, py + 6);
+            ctx.lineTo(px + i * 5 + Math.sin(state.time + i) * 3, py - 10);
+            ctx.stroke();
+        }
+    } else if (d.type === 'pebble') {
+        ctx.fillStyle = '#77766c';
+        ctx.beginPath(); ctx.ellipse(px, py + 6, 7, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#8f8e82';
+        ctx.beginPath(); ctx.ellipse(px - 2, py + 4, 3, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (d.type === 'mushroom') {
+        ctx.fillStyle = '#dcd6c2'; ctx.fillRect(px - 1.5, py, 3, 8);
+        ctx.fillStyle = '#a8453c';
+        ctx.beginPath(); ctx.ellipse(px, py, 7, 5, 0, Math.PI, Math.PI * 2); ctx.fill();
+    } else if (d.type === 'bank_marker') {
+        ctx.fillStyle = 'rgba(107, 74, 43, 0.45)';
+        ctx.beginPath(); ctx.arc(px, py - 4, 22, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#c9a876'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.arc(px, py - 4, 22, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+    } else if (d.type === 'bg_rock') {
+        ctx.fillStyle = 'rgba(50,50,58,0.5)';
+        ctx.beginPath(); ctx.arc(px, py, 14, 0, Math.PI * 2); ctx.fill();
+    }
+}
+
+/* ======================================================================
+   RESET / (RE)START
+   ====================================================================== */
+function resetGameState(){
+    chunks.clear(); decorations.clear(); surfaceCache.clear();
+    state = freshState();
+    initMap();
+    state.entities.push(new Ant('queen', 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
+    for (let i = 0; i < 8; i++) state.entities.push(new Ant('minor', 20, (SURFACE_Y + 6) * TILE_SIZE + 20));
+    for (let i = 0; i < 5; i++) spawnPrey();
+    setTool('pointer');
+    document.getElementById('context-menu').style.display = 'none';
+    document.getElementById('raid-warning').style.display = 'none';
+    updateUI();
+}
+
+/* ======================================================================
+   TUTORIAL SYSTEM
+   ====================================================================== */
+let tutorialActive = false;
+let tutorialAllowsRaids = false;
+let tutorialStepIndex = 0;
+let tutorialWaitingForEvent = null;
+
+const TUTORIAL_STEPS = [
+    {
+        text: "Welcome to the colony. This is your queen's chamber, underground and safe. Everything begins here. Press Next to continue.",
+        target: null
+    },
+    {
+        text: "Use W, A, S, D to pan the camera and explore the nest. Try panning now, then press Next.",
+        target: null
+    },
+    {
+        text: "This is your resource bar. Seeds and meat are stored here once workers deliver them to the queen. Keep both above zero.",
+        target: '#top-hud'
+    },
+    {
+        text: "This gauge shows the queen's hunger. If it runs out, she stops laying eggs and slowly loses health, so keep resources flowing in.",
+        target: '#queen-hunger-wrap'
+    },
+    {
+        text: "Click on any ant, or the queen, to take direct control of it. Try clicking one of your minors on the surface now.",
+        target: null,
+        waitFor: 'select-ant'
+    },
+    {
+        text: "Nicely done. With an ant selected, use the arrow keys to move it, and press Space near food, brood, walls, or enemies to act on them.",
+        target: null
+    },
+    {
+        text: "This is the Pointer tool. With it, click any exposed dirt wall to queue a dig job — idle workers will excavate it automatically.",
+        target: '#tool-pointer'
+    },
+    {
+        text: "These are pheromone tools. Select Forage Pheromone and drag across the ground near food to pull idle workers toward it.",
+        target: '#tool-forage',
+        waitFor: 'place-pheromone', waitForValue: 'forage'
+    },
+    {
+        text: "Attack Pheromone works the same way for combat — mark ground near a threat and nearby minors and majors will rally there.",
+        target: '#tool-attack'
+    },
+    {
+        text: "Spend seeds and meat here to lay eggs for new ants. Minors are cheap and versatile; majors and super majors cost meat but hit much harder.",
+        target: '.spawn-group'
+    },
+    {
+        text: "Army ants raid the nest on a recurring timer. Keep brood deep underground, and rally defenders with the attack pheromone when a raid begins.",
+        target: null
+    },
+    {
+        text: "That's the essentials. Press Finish to release the tutorial and continue building your colony.",
+        target: null
+    }
+];
+
+function startTutorial(){
+    tutorialActive = true;
+    tutorialAllowsRaids = false;
+    tutorialStepIndex = 0;
+    state.raidTimer = 999999;
+    document.getElementById('tutorial-overlay').classList.add('active');
+    renderTutorialStep();
+}
+
+function endTutorial(silent){
+    tutorialActive = false;
+    tutorialWaitingForEvent = null;
+    document.getElementById('tutorial-overlay').classList.remove('active');
+    document.getElementById('tutorial-highlight').style.display = 'none';
+    if (state && !silent) state.raidTimer = 3600;
+}
+
+function renderTutorialStep(){
+    const step = TUTORIAL_STEPS[tutorialStepIndex];
+    document.getElementById('tut-step-tag').textContent = `STEP ${tutorialStepIndex + 1} OF ${TUTORIAL_STEPS.length}`;
+    document.getElementById('tut-step-text').textContent = step.text;
+    const nextBtn = document.getElementById('tut-next');
+    nextBtn.textContent = tutorialStepIndex === TUTORIAL_STEPS.length - 1 ? 'Finish' : 'Next';
+    tutorialWaitingForEvent = step.waitFor || null;
+    nextBtn.style.display = step.waitFor ? 'none' : 'inline-block';
+    positionTutorialCard(step);
+}
+
+function positionTutorialCard(step){
+    const card = document.getElementById('tutorial-card');
+    const hl = document.getElementById('tutorial-highlight');
+    if (step.target){
+        const el = document.querySelector(step.target);
+        if (el){
+            const r = el.getBoundingClientRect();
+            hl.style.display = 'block';
+            hl.style.left = (r.left - 8) + 'px';
+            hl.style.top = (r.top - 8) + 'px';
+            hl.style.width = (r.width + 16) + 'px';
+            hl.style.height = (r.height + 16) + 'px';
+            let cardTop = r.top - card.offsetHeight - 20;
+            if (cardTop < 10) cardTop = r.bottom + 20;
+            let cardLeft = Math.min(Math.max(10, r.left), window.innerWidth - 360);
+            card.style.top = cardTop + 'px';
+            card.style.left = cardLeft + 'px';
+            return;
+        }
+    }
+    hl.style.display = 'none';
+    card.style.left = '50%';
+    card.style.top = '50%';
+    card.style.transform = 'translate(-50%, -50%)';
+}
+
+function updateTutorialPositions(){
+    if (!tutorialActive) return;
+    const step = TUTORIAL_STEPS[tutorialStepIndex];
+    if (step && step.target) positionTutorialCard(step);
+}
+
+function advanceTutorial(){
+    document.getElementById('tutorial-card').style.transform = '';
+    if (tutorialStepIndex >= TUTORIAL_STEPS.length - 1){
+        endTutorial(false);
+        toast('Tutorial complete. Good luck out there.');
+        return;
+    }
+    tutorialStepIndex++;
+    renderTutorialStep();
+}
+
+function onTutorialEvent(type, value){
+    if (!tutorialActive || !tutorialWaitingForEvent) return;
+    const step = TUTORIAL_STEPS[tutorialStepIndex];
+    if (tutorialWaitingForEvent !== type) return;
+    if (step.waitForValue && step.waitForValue !== value) return;
+    setTimeout(() => advanceTutorial(), 400);
+}
+
+document.getElementById('tut-next').addEventListener('click', advanceTutorial);
+document.getElementById('tut-skip').addEventListener('click', () => endTutorial(false));
+
+// Reposition tutorial card on resize
+window.addEventListener('resize', () => { if (tutorialActive) updateTutorialPositions(); });
+
+/* ======================================================================
+   MAIN LOOP (only runs meaningfully while gameRunning is true)
+   ====================================================================== */
+let lastTime = 0;
+function loop(timestamp) {
+    requestAnimationFrame(loop);
+    if (!lastTime) lastTime = timestamp;
+    let elapsed = timestamp - lastTime;
+    if (elapsed >= 1000 / TARGET_FPS) {
+        lastTime = timestamp - (elapsed % (1000 / TARGET_FPS));
+        if (gameRunning && state) {
+            update();
+            draw();
+        }
+    }
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
