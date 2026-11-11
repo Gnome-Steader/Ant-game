@@ -218,6 +218,27 @@
 </div>
 
 <script>
+/* ======================================================================
+   ASSETS & IMAGE LOADING
+   ====================================================================== */
+const ASSETS = {
+    queen: { src: 'https://gnome-steader.github.io/Ant-game/queen.png', img: new Image(), loaded: false, fallback: '#9b59b6' },
+    minor: { src: 'https://gnome-steader.github.io/Ant-game/minor.png', img: new Image(), loaded: false, fallback: '#d9a441' },
+    major: { src: 'https://gnome-steader.github.io/Ant-game/major.png', img: new Image(), loaded: false, fallback: '#c1793f' },
+    super_major: { src: 'https://gnome-steader.github.io/Ant-game/super-major.png', img: new Image(), loaded: false, fallback: '#a8453c' },
+    army_ant: { src: 'https://gnome-steader.github.io/Ant-game/army_ant.png', img: new Image(), loaded: false, fallback: '#8b2a2a' },
+    dirt_tile: { src: 'https://gnome-steader.github.io/Ant-game/dirt_tile.png', img: new Image(), loaded: false, fallback: '#4a3826' },
+    dirt_ball: { src: 'https://gnome-steader.github.io/Ant-game/dirt_ball.png', img: new Image(), loaded: false, fallback: '#6b4a2b' },
+    nut: { src: 'https://gnome-steader.github.io/Ant-game/nut.png', img: new Image(), loaded: false, fallback: null },
+    meat_food: { src: 'https://gnome-steader.github.io/Ant-game/meat.png', img: new Image(), loaded: false, fallback: null },
+    bug: { src: 'https://gnome-steader.github.io/Ant-game/bug.png', img: new Image(), loaded: false, fallback: null }
+};
+Object.values(ASSETS).forEach(asset => {
+    asset.img.src = asset.src;
+    asset.img.onload = () => asset.loaded = true;
+    asset.img.onerror = () => asset.loaded = false;
+});
+
 const SCREENS = ['start-screen','game-over-screen'];
 function showScreen(id){
     SCREENS.forEach(s => document.getElementById(s).classList.remove('visible'));
@@ -462,6 +483,37 @@ function nearestOpenTile(gx, gy, maxRadius = 6) {
     return null;
 }
 
+function drawFoodIcon(x, y, type, size) {
+    ctx.save(); ctx.translate(x, y);
+    const asset = type === 'seed' ? ASSETS.nut : ASSETS.meat_food;
+    if (asset && asset.loaded && asset.img.width && asset.img.height) {
+        let aspect = asset.img.width / asset.img.height;
+        let w = size, h = size;
+        if (aspect > 1) h = size / aspect; else w = size * aspect;
+        ctx.drawImage(asset.img, -w / 2, -h / 2, w, h);
+    } else {
+        ctx.fillStyle = type === 'seed' ? '#e0954f' : '#cf5b4f';
+        ctx.beginPath(); ctx.arc(0, 0, size / 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+}
+
+function drawBroodShape(x, y, stage) {
+    ctx.save(); ctx.translate(x, y);
+    if (stage === 'egg') {
+        ctx.fillStyle = '#e8ecec'; ctx.beginPath(); ctx.ellipse(0, 0, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#6f8fa8'; ctx.lineWidth = 1; ctx.stroke();
+    } else if (stage === 'larva') {
+        ctx.fillStyle = '#ede6cf'; ctx.beginPath(); ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#b3a274'; ctx.lineWidth = 1;
+        for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(i * 3, -4); ctx.lineTo(i * 3, 4); ctx.stroke(); }
+    } else if (stage === 'pupa') {
+        ctx.fillStyle = '#cdb98c'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#7d6a48'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.restore();
+}
+
 class Prey {
     constructor(x, y) {
         this.x = x; this.y = y; this.hp = 12; this.maxHp = 12; this.speed = 1.4; this.wanderTimer = 0; this.dir = { x: 0, y: 0 }; this.flash = 0; this.size = 15; this.id = Math.random().toString(36).slice(2);
@@ -484,8 +536,22 @@ class Prey {
     }
     draw() {
         ctx.save(); ctx.translate(this.x, this.y);
-        if (this.flash > 0) ctx.fillStyle = '#c17a5a'; else ctx.fillStyle = '#5a4636';
-        ctx.beginPath(); ctx.ellipse(0, 0, this.size / 2, this.size / 3, 0, 0, Math.PI * 2); ctx.fill();
+        const asset = ASSETS.bug;
+        if (asset && asset.loaded && asset.img.width && asset.img.height) {
+            if (this.flash > 0) ctx.filter = 'sepia(1) saturate(6) hue-rotate(-40deg) brightness(1.1)';
+            let size = this.size * 2.1;
+            let aspect = asset.img.width / asset.img.height;
+            let drawW = size, drawH = size;
+            if (aspect > 1) drawH = size / aspect; else drawW = size * aspect;
+            ctx.rotate(Math.atan2(this.dir.y || 0.01, this.dir.x || 0.01));
+            ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
+            ctx.filter = 'none';
+        } else {
+            if (this.flash > 0) ctx.fillStyle = '#c17a5a'; else ctx.fillStyle = '#5a4636';
+            ctx.beginPath(); ctx.ellipse(0, 0, this.size / 2, this.size / 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#3a2c1f';
+            ctx.beginPath(); ctx.ellipse(-this.size / 3, 0, this.size / 4, this.size / 5, 0, 0, Math.PI * 2); ctx.fill();
+        }
         if (this.hp < this.maxHp) { ctx.fillStyle = 'rgba(168,69,60,0.9)'; ctx.fillRect(-12, -this.size / 2 - 10, 24, 3); ctx.fillStyle = 'rgba(122,154,90,0.9)'; ctx.fillRect(-12, -this.size / 2 - 10, 24 * (this.hp / this.maxHp), 3); }
         ctx.restore();
     }
@@ -725,12 +791,14 @@ class Ant {
                 if (this.path.length === 0) { this.state = 'IDLE'; this.huntTargetId = null; }
             }
         } else if (this.state === 'MOVING_TO_JOB') {
+            if (!this.job) { this.state = 'IDLE'; return; }
             if (Math.sqrt(distSq(this.gx, this.gy, this.job.x, this.job.y)) <= 1) {
                 if (this.job.type === 'DIG') { this.state = 'DIGGING'; this.digTimer = 20; }
                 else if (this.job.type === 'HARVEST') { this.state = 'HARVESTING'; this.digTimer = 10; }
                 else if (this.job.type === 'FEED_LARVA') { this.state = 'FEEDING_LARVA'; this.digTimer = 15; }
             } else { this.assignJob(this.job); }
         } else if (this.state === 'DIGGING') {
+            if (!this.job) { this.state = 'IDLE'; return; }
             this.digTimer--;
             if (this.digTimer <= 0) {
                 setTile(this.job.x, this.job.y, 0); spawnParticles(this.job.x * TILE_SIZE + 20, this.job.y * TILE_SIZE + 20, '#4a3826', 15);
@@ -743,6 +811,7 @@ class Ant {
                 pathfindsThisFrame++; this.path = myQueen ? (findPath(this.gx, this.gy, myQueen.gx, SURFACE_Y - 2) || []) : []; this.pathTimer = 30;
             }
         } else if (this.state === 'HARVESTING') {
+            if (!this.job) { this.state = 'IDLE'; return; }
             this.digTimer--;
             if (this.digTimer <= 0) {
                 let stillThere = state.surfaceItems.some(i => i.x === this.job.x && i.y === this.job.y);
@@ -753,6 +822,7 @@ class Ant {
                 if (myQueen && pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, myQueen.gx, myQueen.gy) || []; }
             }
         } else if (this.state === 'FEEDING_LARVA') {
+            if (!this.job) { this.state = 'IDLE'; return; }
             this.digTimer--;
             if (this.digTimer <= 0) {
                 let brood = state.brood.find(b => b.id === this.job.broodId);
@@ -800,8 +870,15 @@ class Ant {
             if (adj) { targetX = adj.x; targetY = adj.y; }
         }
         pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, targetX, targetY) || []; this.pathTimer = 15;
-        if (this.path.length > 0 || (this.gx === targetX && this.gy === targetY)) { this.state = 'MOVING_TO_JOB'; }
-        else { job.assigned = false; this.job = null; job.failCount = (job.failCount || 0) + 1; if (job.failCount > 3) state.jobs = state.jobs.filter(j => j !== job); }
+        if (this.path.length > 0 || (this.gx === targetX && this.gy === targetY)) {
+            this.state = 'MOVING_TO_JOB';
+        } else {
+            job.assigned = false;
+            this.job = null;
+            this.state = 'IDLE';
+            job.failCount = (job.failCount || 0) + 1;
+            if (job.failCount > 3) state.jobs = state.jobs.filter(j => j !== job);
+        }
     }
 
     draw() {
@@ -813,9 +890,18 @@ class Ant {
         ctx.scale(scaleX, scaleY);
 
         let size = this.type === 'queen' ? TILE_SIZE * 1.5 : this.type === 'super_major' ? TILE_SIZE * 1.2 : TILE_SIZE;
-        ctx.fillStyle = this.type === 'queen' ? '#9b59b6' : this.type === 'super_major' ? '#a8453c' : this.type === 'major' ? '#c1793f' : '#d9a441';
-        ctx.beginPath(); ctx.ellipse(0, 0, size / 2, size / 3, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(size / 3, -2, 4, 4);
+        let asset = ASSETS[this.type];
+        
+        let drawW = size, drawH = size;
+        if (asset && asset.loaded && asset.img.width && asset.img.height) {
+            let aspect = asset.img.width / asset.img.height;
+            if (aspect > 1) drawH = size / aspect; else drawW = size * aspect;
+            ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
+        } else {
+            ctx.fillStyle = this.type === 'queen' ? '#9b59b6' : this.type === 'super_major' ? '#a8453c' : this.type === 'major' ? '#c1793f' : '#d9a441';
+            ctx.beginPath(); ctx.ellipse(0, 0, size / 2, size / 3, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(size / 3, -2, 4, 4);
+        }
 
         let teamColor = state.teams[this.team].color;
         ctx.strokeStyle = teamColor; ctx.lineWidth = 3;
@@ -823,9 +909,12 @@ class Ant {
 
         if (this.flash > 0) { ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = 'rgba(207, 91, 79, 0.55)'; ctx.fillRect(-size, -size, size*2, size*2); ctx.globalCompositeOperation = 'source-over'; }
 
-        if (this.state === 'CARRYING_DIRT') { ctx.fillStyle = '#6b4a2b'; ctx.beginPath(); ctx.arc(size / 2, 0, 6, 0, Math.PI * 2); ctx.fill(); }
-        else if (this.state === 'CARRYING_RESOURCE') { ctx.fillStyle = this.carriedResource === 'seed' ? '#e0954f' : '#cf5b4f'; ctx.beginPath(); ctx.arc(size / 2, 0, 8, 0, Math.PI * 2); ctx.fill(); }
-        else if (this.state === 'CARRYING_BROOD' && this.carriedBrood) { ctx.fillStyle = '#e8ecec'; ctx.beginPath(); ctx.ellipse(size / 2, 0, 5, 7, 0, 0, Math.PI * 2); ctx.fill(); }
+        if (this.state === 'CARRYING_DIRT') {
+            if (ASSETS.dirt_ball && ASSETS.dirt_ball.loaded) ctx.drawImage(ASSETS.dirt_ball.img, drawW / 4, -drawH / 4, drawW / 2, drawH / 2);
+            else { ctx.fillStyle = '#6b4a2b'; ctx.beginPath(); ctx.arc(drawW / 2, 0, 6, 0, Math.PI * 2); ctx.fill(); }
+        }
+        else if (this.state === 'CARRYING_RESOURCE') { drawFoodIcon(drawW / 2, 0, this.carriedResource, 16); }
+        else if (this.state === 'CARRYING_BROOD' && this.carriedBrood) { drawBroodShape(drawW / 2, 0, this.carriedBrood.stage); }
 
         if (state.controlledAnt === this) { ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, size / 1.2, 0, Math.PI * 2); ctx.stroke(); }
         if (this.hp < this.maxHp) { ctx.fillStyle = 'rgba(168,69,60,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30, 4); ctx.fillStyle = 'rgba(122,154,90,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30 * (this.hp / this.maxHp), 4); }
@@ -849,7 +938,7 @@ function layEgg(willHatchAs, teamId, silent = false) {
     let spot = spots[Math.floor(Math.random() * spots.length)] || { x: queen.gx, y: queen.gy };
     let egg = makeBrood(spot.x, spot.y, willHatchAs, teamId);
     state.brood.push(egg);
-    if (!silent) spawnText(queen.x, queen.y - 30, "Egg Laid", "#e8ecec", 14);
+    if (!silent && teamId === 0) spawnText(queen.x, queen.y - 30, "Egg Laid", "#e8ecec", 14);
     if (teamId === 0) updateUI();
     return egg;
 }
@@ -1054,7 +1143,14 @@ function draw() {
     for (let gy = gyMin; gy <= gyMax; gy++) {
         for (let gx = gxMin; gx <= gxMax; gx++) {
             const t = getTile(gx, gy);
-            if (t === 1) { ctx.fillStyle = '#4a3826'; ctx.fillRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE); ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.strokeRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE); }
+            if (t === 1) {
+                if (ASSETS.dirt_tile && ASSETS.dirt_tile.loaded) {
+                    ctx.drawImage(ASSETS.dirt_tile.img, gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                } else {
+                    ctx.fillStyle = '#4a3826'; ctx.fillRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.strokeRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                }
+            }
             else if (t === 2) { ctx.fillStyle = '#33333a'; ctx.beginPath(); ctx.arc(gx * TILE_SIZE + 20, gy * TILE_SIZE + 20, 19, 0, Math.PI * 2); ctx.fill(); }
         }
     }
@@ -1074,15 +1170,16 @@ function draw() {
     state.surfaceItems.forEach(item => {
         let ix = item.x * TILE_SIZE + TILE_SIZE / 2, iy = item.y * TILE_SIZE + TILE_SIZE / 2;
         if (!inView(ix, iy)) return;
-        ctx.fillStyle = item.type === 'seed' ? '#e0954f' : '#cf5b4f'; ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE * 0.3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = item.type === 'seed' ? 'rgba(224, 149, 79, 0.22)' : 'rgba(207, 91, 79, 0.22)';
+        ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE * 0.4, 0, Math.PI * 2); ctx.fill();
+        drawFoodIcon(ix, iy, item.type, TILE_SIZE * 0.6);
     });
 
     state.brood.forEach(b => {
         if (b.carriedBy) return;
         let bx = b.x * TILE_SIZE + TILE_SIZE / 2, by = b.y * TILE_SIZE + TILE_SIZE / 2;
         if (!inView(bx, by)) return;
-        ctx.fillStyle = b.stage === 'egg' ? '#e8ecec' : b.stage === 'larva' ? '#ede6cf' : '#cdb98c';
-        ctx.beginPath(); ctx.ellipse(bx, by, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+        drawBroodShape(bx, by, b.stage);
     });
 
     state.flies.forEach(f => { if (inView(f.x, f.y)) f.draw(); });
