@@ -2,283 +2,1126 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Ant Colony .io</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ants.io — Colony Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-html,body{margin:0;height:100%;background:#1d1913;color:#f2e9d8;font-family:system-ui,sans-serif;overflow:hidden;touch-action:none}
-canvas{display:block}
-#menu{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(21,18,13,.93);z-index:5;text-align:center;padding:20px}
-#menu h1{font-size:44px;margin:0;color:#e0954f}
-#menu p{max-width:430px;color:#c9bfa9;line-height:1.5;margin:0}
-input,button{font:inherit;padding:12px 18px;border-radius:6px;border:1px solid #5a4a36;background:#2a231a;color:#f2e9d8}
-button{background:#c1793f;color:#1a1108;font-weight:700;cursor:pointer;border:0}
-#hud,#lb,#st{position:fixed;font-size:13px;background:rgba(21,18,13,.8);padding:8px 12px;border-radius:6px;pointer-events:none}
-#hud{top:10px;left:10px}#lb{top:10px;right:10px;min-width:150px}#st{bottom:10px;left:10px;color:#c9bfa9}
-#rc{position:fixed;bottom:10px;right:10px;display:none;touch-action:none}
+  :root{
+    --soil-900:#15120d; --soil-800:#1d1913; --soil-700:#2a231a; --soil-600:#3a3024;
+    --parchment:#f2e9d8; --parchment-dim:#c9bfa9;
+    --clay:#c1793f; --clay-bright:#e0954f;
+    --moss:#7a9a5a; --moss-dim:#5c7644;
+    --brick:#a8453c; --brick-bright:#cf5b4f;
+    --dust-blue:#6f8fa8;
+    --line:rgba(242,233,216,0.14); --line-strong:rgba(242,233,216,0.28);
+    --shadow-deep:0 18px 50px rgba(0,0,0,0.55);
+    --font-display:'Fraunces',Georgia,serif;
+    --font-ui:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{width:100%;height:100%;}
+  body{
+    background:var(--soil-900); color:var(--parchment);
+    font-family:var(--font-ui); overflow:hidden; width:100vw; height:100vh;
+  }
+  button{ font-family:var(--font-ui); }
+  #game-root{ position:relative; width:100%; height:100%; }
+  canvas{ display:block; width:100%; height:100%; image-rendering:pixelated; }
+
+  .screen{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse 900px 600px at 50% 20%, rgba(193,121,63,0.10), transparent 60%), linear-gradient(180deg, var(--soil-900) 0%, #0f0d09 100%);
+    z-index:50; overflow:auto; padding:40px 20px;
+  }
+  .screen.visible{ display:flex; }
+  .field-texture{
+    position:absolute; inset:0; pointer-events:none; opacity:0.5;
+    background-image: repeating-linear-gradient(90deg, transparent, transparent 79px, rgba(242,233,216,0.02) 80px), repeating-linear-gradient(0deg, transparent, transparent 79px, rgba(242,233,216,0.02) 80px);
+  }
+
+  #start-screen .panel, #game-over-screen .panel{ position:relative; max-width:560px; width:100%; text-align:center; }
+  .eyebrow-mark{ display:inline-flex; align-items:center; gap:10px; color:var(--clay-bright); font-size:13px; letter-spacing:0.04em; margin-bottom:18px; }
+  .title-lockup{ font-family:var(--font-display); font-weight:500; font-style:italic; font-size:clamp(40px,7vw,64px); line-height:1.05; color:var(--parchment); }
+  .title-lockup .sub{ display:block; font-family:var(--font-ui); font-style:normal; font-weight:500; font-size:15px; letter-spacing:0.02em; color:var(--parchment-dim); margin-top:14px; }
+  .title-rule{ width:64px; height:2px; background:var(--clay); margin:26px auto; border:none; position:relative; }
+  .title-rule::after{ content:''; position:absolute; left:50%; top:50%; width:6px; height:6px; background:var(--clay-bright); border-radius:50%; transform:translate(-50%,-50%) rotate(45deg); }
+  .lede{ font-size:15.5px; line-height:1.65; color:var(--parchment-dim); max-width:440px; margin:0 auto 36px; text-wrap:balance; }
+  .menu-stack{ display:flex; flex-direction:column; gap:10px; max-width:340px; margin:0 auto; }
+  .menu-btn{
+    background:var(--soil-700); border:1px solid var(--line-strong); color:var(--parchment); padding:15px 22px; border-radius:3px; cursor:pointer; font-size:15px; font-weight:500;
+    display:flex; align-items:center; justify-content:space-between; gap:12px; transition:background 0.15s, border-color 0.15s, transform 0.1s; text-align:left;
+  }
+  .menu-btn .arrow{ opacity:0.5; font-family:var(--font-display); font-style:italic; transition:transform 0.15s; }
+  .menu-btn:hover{ background:var(--soil-600); border-color:var(--clay); }
+  .menu-btn:hover .arrow{ transform:translateX(3px); opacity:1; }
+  .menu-btn.primary{ background:var(--clay); border-color:var(--clay); color:#1a1108; font-weight:600; }
+  .menu-btn.primary:hover{ background:var(--clay-bright); border-color:var(--clay-bright); }
+
+  #ui-layer{ position:absolute; inset:0; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; z-index:10; opacity:0; transition:opacity 0.4s; }
+  #ui-layer.active{ opacity:1; }
+  .hud-panel{ background:rgba(21,18,13,0.90); border:1px solid var(--line); pointer-events:auto; backdrop-filter:blur(6px); }
+  #top-hud{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; padding:12px 20px; border-bottom:1px solid var(--line-strong); }
+  .resource-group{ display:flex; gap:22px; align-items:center; flex-wrap:wrap; }
+  .res-chip{ display:flex; align-items:center; gap:7px; font-size:15px; font-weight:600; color:var(--parchment); }
+  .res-chip svg{ width:18px; height:18px; flex-shrink:0; }
+  .res-chip.seeds svg{ color:var(--clay-bright); }
+  .res-chip.meat svg{ color:var(--brick-bright); }
+  .res-chip.brood{ font-size:13px; font-weight:500; color:var(--parchment-dim); }
+  .res-chip.brood svg{ color:var(--dust-blue); width:16px; height:16px; }
+
+  #queen-hunger-wrap{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--parchment-dim); }
+  #queen-hunger-wrap svg{ width:16px; height:16px; color:var(--clay-bright); }
+  #queen-hunger-bar{ width:84px; height:8px; background:var(--soil-600); border:1px solid var(--line-strong); border-radius:2px; overflow:hidden; }
+  #queen-hunger-fill{ height:100%; background:var(--moss); width:100%; transition:width 0.3s, background 0.3s; }
+
+  #leaderboard{ font-size:13px; color:var(--parchment-dim); line-height:1.6; text-align:right; background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:4px; border:1px solid var(--line); }
+  #leaderboard strong{ color:var(--parchment); font-size:14px; display:block; margin-bottom:4px; }
+
+  #toast-wrap{ position:absolute; top:70px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; gap:6px; align-items:center; pointer-events:none; z-index:5; }
+  .toast{ background:rgba(21,18,13,0.92); border:1px solid var(--line-strong); padding:7px 16px; border-radius:3px; font-size:13px; color:var(--parchment); opacity:0; animation:toast-in 0.3s forwards, toast-out 0.4s forwards 2.6s; }
+  @keyframes toast-in{ from{opacity:0; transform:translateY(-8px);} to{opacity:1; transform:translateY(0);} }
+  @keyframes toast-out{ from{opacity:1;} to{opacity:0; transform:translateY(-8px);} }
+
+  #context-menu{ position:absolute; top:76px; right:16px; display:none; flex-direction:column; align-items:stretch; gap:8px; width:216px; pointer-events:auto; padding:14px; z-index:6; }
+  #context-menu h3{ font-size:12.5px; color:var(--clay-bright); font-weight:600; margin-bottom:2px; }
+  .menu-action-btn{ background:var(--soil-700); border:1px solid var(--line-strong); color:var(--parchment); font-size:12.5px; padding:9px 12px; border-radius:3px; cursor:pointer; font-weight:500; transition:background 0.15s, border-color 0.15s; }
+  .menu-action-btn:hover{ background:var(--soil-600); border-color:var(--clay); }
+
+  #controls-hint{ position:absolute; bottom:88px; left:20px; color:var(--parchment-dim); font-size:12.5px; pointer-events:none; background:rgba(21,18,13,0.85); padding:10px 14px; border-radius:3px; border:1px solid var(--line); max-width:320px; line-height:1.6; z-index:5; }
+  .highlight{ color:var(--clay-bright); font-weight:600; }
+  kbd.mini{ background:var(--soil-600); border:1px solid var(--line-strong); border-radius:2px; padding:1px 5px; font-size:11px; color:var(--parchment); }
+
+  #action-prompt{ position:absolute; left:50%; bottom:126px; transform:translateX(-50%); background:rgba(21,18,13,0.92); border:1px solid var(--clay); color:var(--clay-bright); padding:8px 18px; border-radius:20px; font-size:13.5px; font-weight:600; display:none; pointer-events:none; white-space:nowrap; z-index:5; }
+
+  #bottom-hud{ display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; padding:14px 20px; border-top:1px solid var(--line-strong); }
+  .tools-group, .spawn-group{ display:flex; gap:8px; flex-wrap:wrap; }
+  .tool-btn, .spawn-btn{ background:var(--soil-700); color:var(--parchment); border:1px solid var(--line-strong); padding:10px 14px; cursor:pointer; font-weight:600; border-radius:3px; transition:all 0.15s; font-size:12.5px; display:flex; align-items:center; gap:7px; }
+  .tool-btn svg, .spawn-btn svg{ width:15px; height:15px; flex-shrink:0; }
+  .tool-btn:hover, .spawn-btn:hover{ background:var(--soil-600); transform:translateY(-1px); }
+  .spawn-btn:disabled{ background:var(--soil-800); color:#54493a; cursor:not-allowed; transform:none; border-color:var(--soil-700); }
+  .tool-btn.active{ background:var(--soil-600); border-color:var(--parchment); }
+  .btn-cost{ display:block; font-size:10.5px; color:var(--parchment-dim); margin-top:3px; font-weight:400; }
+  .spawn-btn{ flex-direction:column; align-items:flex-start; gap:2px; }
+  .spawn-btn .btn-label-row{ display:flex; align-items:center; gap:7px; }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 </head>
 <body>
-<canvas id="cv"></canvas>
-<div id="hud"></div><div id="lb"></div><div id="st"></div>
-<button id="rc">Recall</button>
-<div id="menu">
-  <h1>Ant Colony .io</h1>
-  <p>Move your mouse (or finger) to lead your swarm. Ants grab food and carry it home &mdash; every 2 food lays a brood. <b>Raid enemy nests to steal their brood:</b> stolen brood hatches as ants for <i>your</i> colony. Hold <b>Space</b> to recall your ants and defend.</p>
-  <p>Open the page in more tabs or send the link to friends to play together. Empty slots are filled with bot colonies.</p>
-  <input id="nm" maxlength="12" placeholder="Colony name">
-  <button id="go">Play</button>
+
+<div id="game-root">
+  <canvas id="gameCanvas"></canvas>
+
+  <div class="screen visible" id="start-screen">
+    <div class="field-texture"></div>
+    <div class="panel">
+      <div class="eyebrow-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="7" r="2.6"/><circle cx="12" cy="12.5" r="3.6"/><circle cx="12" cy="18.5" r="2.9"/><path d="M9 12 L3 9 M9 12 L3 15 M15 12 L21 9 M15 12 L21 15 M11 9.5 L8 6 M13 9.5 L16 6"/></svg>
+        <span>.IO Arena Mode</span>
+      </div>
+      <h1 class="title-lockup">Ants.io
+        <span class="sub">Multiplayer-Style Arena</span>
+      </h1>
+      <hr class="title-rule">
+      <p class="lede">Compete against rival AI colonies in a massive underground arena. Grow your population, harvest resources, and raid enemy queens to be the last colony standing.</p>
+      <div class="menu-stack">
+        <button class="menu-btn primary" id="btn-launch">
+          <span>Enter Arena</span>
+          <span class="arrow">&rarr;</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="game-over-screen">
+    <div class="field-texture"></div>
+    <div class="panel">
+      <h1 class="title-lockup" id="game-over-title">Game Over</h1>
+      <hr class="title-rule">
+      <p class="lede" id="game-over-sub"></p>
+      <div class="menu-stack">
+        <button class="menu-btn primary" id="btn-restart">
+          <span>Play Again</span>
+          <span class="arrow">&rarr;</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="controls-hint">
+    <span class="key-row"><kbd class="mini">W</kbd><kbd class="mini">A</kbd><kbd class="mini">S</kbd><kbd class="mini">D</kbd></span> Pan camera &middot; Scroll to zoom<br>
+    <span class="highlight">Click an ant</span> or the queen to take control<br>
+    <span class="key-row"><kbd class="mini">&uarr;&darr;&larr;&rarr;</kbd></span> Move &middot; <span class="key-row"><kbd class="mini">Space</kbd></span> Act
+  </div>
+
+  <div id="action-prompt"></div>
+
+  <div id="ui-layer">
+    <div id="top-hud" class="hud-panel">
+      <div class="resource-group">
+        <span class="res-chip seeds">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c3 3 6 7 6 11a6 6 0 0 1-12 0c0-4 3-8 6-11z"/></svg>
+          <span class="num" id="count-seeds">10</span>
+        </span>
+        <span class="res-chip meat">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 3c-3 0-6 2-7 5-2 0-4 2-4 4.5 0 1 .3 1.8.8 2.5L4 17.5 6.5 20l2.5-2.8c.7.5 1.5.8 2.5.8 2.5 0 4.5-2 4.5-4 3-1 5-4 5-7 0-1.7-1.4-4-4-4z"/></svg>
+          <span class="num" id="count-meat">5</span>
+        </span>
+        <span class="res-chip brood">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="13" rx="6" ry="8"/></svg>
+          Brood <span class="num" id="count-brood">0</span>
+        </span>
+        <div id="queen-hunger-wrap">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="6" r="3"/><path d="M4 20l1.5-9L9 13l3-7 3 7 3.5-2L20 20z"/></svg>
+          <span>Queen</span>
+          <div id="queen-hunger-bar"><div id="queen-hunger-fill"></div></div>
+        </div>
+      </div>
+      <div id="leaderboard"></div>
+    </div>
+
+    <div id="toast-wrap"></div>
+
+    <div id="context-menu" class="hud-panel">
+      <h3 id="context-menu-title">Ant Selected</h3>
+      <button class="menu-action-btn" id="release-btn">Release Control</button>
+    </div>
+
+    <div id="bottom-hud" class="hud-panel">
+      <div class="tools-group">
+        <button class="tool-btn active" id="tool-pointer" data-tool="pointer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 8-6 2-2 6z"/></svg> Pointer
+        </button>
+        <button class="tool-btn tool-forage" id="tool-forage" data-tool="forage">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21c-4-3-7-6.5-7-10.5A7 7 0 0 1 12 3a7 7 0 0 1 7 7.5C19 14.5 16 18 12 21z"/></svg> Forage Pheromone
+        </button>
+        <button class="tool-btn tool-attack" id="tool-attack" data-tool="attack">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M9 6h9v9"/></svg> Attack Pheromone
+        </button>
+      </div>
+      <div class="spawn-group">
+        <button class="spawn-btn" id="spawn-minor">
+          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="5" ry="7"/></svg>Spawn Minor</span>
+          <span class="btn-cost">2 Seeds</span>
+        </button>
+        <button class="spawn-btn" id="spawn-major">
+          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="6" ry="8"/></svg>Spawn Major</span>
+          <span class="btn-cost">3 Seeds, 1 Meat</span>
+        </button>
+        <button class="spawn-btn" id="spawn-super">
+          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="7" ry="9"/></svg>Spawn Super Major</span>
+          <span class="btn-cost">4 Seeds, 2 Meat</span>
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
+
 <script>
-const W=2600,H=2600,MINC=4,MAXC=6,MAXANT=60,LOBBY='antio-lobby-v1';
-const COL=['#e0954f','#6f8fa8','#7a9a5a','#cf5b4f','#b58bd6','#e3d36b'];
-const BOT=['Red Fangs','Dune Crawlers','Moss Guild','Ember Swarm','Pale Legion','Sand Raiders'];
-const $=id=>document.getElementById(id);
-const cv=$('cv'),cx=cv.getContext('2d');
-const img={};['queen','nut'].forEach(n=>{const i=new Image();i.src=n+'.png';img[n]=i;});
-const rnd=(a,b)=>a+Math.random()*(b-a), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-let view={cols:{},food:[],you:-1,h:1},tgt={x:W/2,y:H/2,r:0},cam={x:W/2,y:H/2},Z=1;
-let myName='Ant',peer=null,clientConn=null,sim=null,simTimer=null,net='',nextId=1;
-
-function resize(){cv.width=innerWidth;cv.height=innerHeight;Z=innerWidth<700?.7:1;}
-addEventListener('resize',resize);resize();
-
-/* ============ HOST: authoritative simulation ============ */
-function spawnFood(){sim.food.push({x:rnd(60,W-60),y:rnd(60,H-60)});}
-function addAnt(c){c.ants.push({x:c.x+rnd(-20,20),y:c.y+rnd(-20,20),hp:3,carry:0,ph:Math.random()*6.28,r:10+Math.random()*50});}
-function spawnCol(c){c.x=rnd(200,W-200);c.y=rnd(200,H-200);c.tx=c.x;c.ty=c.y;c.brood=[];c.food=0;c.ants=[];for(let i=0;i<6;i++)addAnt(c);}
-function newCol(name,bot){
-  const used=sim.cols.map(o=>o.k);
-  const k=[0,1,2,3,4,5].find(k=>!used.includes(k));
-  const c={id:nextId++,n:bot?BOT[k]:name,k,bot,ants:[],brood:[],food:0,stolen:0,tx:0,ty:0,raid:0,wait:0,recall:0,conn:null};
-  spawnCol(c);sim.cols.push(c);return c;
-}
-function fillBots(){while(sim.cols.length<MINC)newCol('',true);}
-
-function startHost(p){
-  clearInterval(simTimer);
-  sim={cols:[],food:[],tick:0};nextId=1;
-  for(let i=0;i<60;i++)spawnFood();
-  sim.me=newCol(myName,false);
-  fillBots();
-  p.on('connection',c=>{
-    c.on('data',d=>onClientMsg(c,d));
-    c.on('close',()=>{if(c.col&&sim){sim.cols=sim.cols.filter(x=>x!==c.col);fillBots();}});
-  });
-  simTimer=setInterval(step,33);
-  net='Hosting the lobby';
+const SCREENS = ['start-screen','game-over-screen'];
+function showScreen(id){
+    SCREENS.forEach(s => document.getElementById(s).classList.remove('visible'));
+    if (id) document.getElementById(id).classList.add('visible');
 }
 
-function onClientMsg(c,d){
-  if(!sim)return;
-  if(d.t==='join'&&!c.col){
-    const bots=sim.cols.filter(x=>x.bot);
-    if(sim.cols.length>=MAXC&&!bots.length){c.send({full:1});return;}
-    if(sim.cols.length>=MINC&&bots.length){
-      bots.sort((a,b)=>a.ants.length-b.ants.length);
-      sim.cols.splice(sim.cols.indexOf(bots[0]),1); // a human replaces the weakest bot
+let gameRunning = false;
+document.getElementById('btn-launch').onclick = () => startNewGame();
+document.getElementById('btn-restart').onclick = () => startNewGame();
+
+function startNewGame(){
+    resetGameState();
+    showScreen(null);
+    document.getElementById('ui-layer').classList.add('active');
+    gameRunning = true;
+}
+
+function endGame(won){
+    gameRunning = false;
+    document.getElementById('ui-layer').classList.remove('active');
+    document.getElementById('game-over-title').textContent = won ? "Victory!" : "Colony Lost";
+    document.getElementById('game-over-title').style.color = won ? "var(--moss)" : "var(--parchment)";
+    document.getElementById('game-over-sub').textContent = won ? "You are the last queen standing in the arena." : "Your queen has fallen to a rival colony.";
+    showScreen('game-over-screen');
+}
+
+let TARGET_FPS = 60;
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const TILE_SIZE = 40;
+const SURFACE_Y = 15;
+const CHUNK_SIZE = 16;
+
+const camera = { x: 0, y: 0, zoom: 1.0 };
+const keys = { w: false, a: false, s: false, d: false, arrowup: false, arrowdown: false, arrowleft: false, arrowright: false, ' ': false };
+let spacePressed = false;
+let pathfindsThisFrame = 0;
+
+window.addEventListener('keydown', e => {
+    if (!gameRunning) return;
+    let k = e.key.toLowerCase();
+    if (k === ' ') k = ' ';
+    if (keys.hasOwnProperty(k)) { keys[k] = true; if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault(); }
+});
+window.addEventListener('keyup', e => {
+    let k = e.key.toLowerCase();
+    if (k === ' ') { k = ' '; spacePressed = false; }
+    if (keys.hasOwnProperty(k)) keys[k] = false;
+});
+canvas.addEventListener('wheel', e => {
+    if (!gameRunning) return;
+    camera.zoom -= e.deltaY * 0.001;
+    camera.zoom = Math.max(0.4, Math.min(camera.zoom, 3.0));
+});
+
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize); resize();
+
+function distSq(x1, y1, x2, y2) { return (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1); }
+
+const chunks = new Map();
+const decorations = new Map();
+const surfaceCache = new Map();
+function chunkKey(cx, cy) { return cx + ',' + cy; }
+function hash2(x, y) { let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123; return h - Math.floor(h); }
+
+function surfaceHeightAt(gx) {
+    if (surfaceCache.has(gx)) return surfaceCache.get(gx);
+    let val = SURFACE_Y + Math.round(Math.sin(gx * 0.07) * 2 + Math.sin(gx * 0.021) * 3) + Math.round(Math.sin(gx * 0.004) * 12);
+    surfaceCache.set(gx, val); return val;
+}
+
+function generateChunk(cx, cy) {
+    const data = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const baseX = cx * CHUNK_SIZE, baseY = cy * CHUNK_SIZE;
+    const decos = [];
+    for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+            const gx = baseX + lx, gy = baseY + ly;
+            const surf = surfaceHeightAt(gx);
+            let val = (gy < surf) ? 0 : 1;
+            if (val === 1) {
+                if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2;
+                if (gy > surf + 4 && hash2(gx * 0.09 + 50, gy * 0.09 + 50) > 0.965) val = 0;
+            }
+            data[ly * CHUNK_SIZE + lx] = val;
+        }
     }
-    const col=newCol(String(d.n||'Ant').slice(0,12),false);
-    col.conn=c;c.col=col;
-  }else if(d.t==='tgt'&&c.col){
-    c.col.tx=clamp(+d.x||0,0,W);c.col.ty=clamp(+d.y||0,0,H);c.col.recall=d.r?1:0;
-  }
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        const gx = baseX + lx; const surf = surfaceHeightAt(gx);
+        if (surf >= baseY && surf < baseY + CHUNK_SIZE) {
+            const r = hash2(gx * 5.3, 91.1);
+            if (r > 0.82) decos.push({ type: 'grass', x: gx, y: surf - 1 });
+            else if (r > 0.74) decos.push({ type: 'pebble', x: gx, y: surf - 1 });
+            if (hash2(gx * 4.1, 88.8) > 0.95) {
+                state.surfaceItems.push({ type: 'seed', x: gx, y: surf - 1 });
+                state.jobs.push({ type: 'HARVEST', x: gx, y: surf - 1, resourceType: 'seed', assigned: false });
+            }
+        }
+    }
+    chunks.set(chunkKey(cx, cy), data); decorations.set(chunkKey(cx, cy), decos);
 }
 
-function deliver(c,a){
-  if(a.carry===1){c.food++;if(c.food>=2){c.food-=2;c.brood.push(300);}}
-  else{c.brood.push(240);c.stolen++;} // stolen brood hatches for the thief
-  a.carry=0;
+function ensureChunk(cx, cy) {
+    const key = chunkKey(cx, cy);
+    if (!chunks.has(key)) generateChunk(cx, cy);
+    return chunks.get(key);
 }
 
-function botThink(c,t){
-  const foes=sim.cols.filter(e=>e!==c);
-  const threat=foes.some(e=>e.ants.some(a=>Math.hypot(a.x-c.x,a.y-c.y)<260));
-  if(threat){c.tx=c.x;c.ty=c.y;c.raid=0;return;}
-  if(t<c.raid)return;
-  const rich=foes.filter(e=>e.brood.length&&e.ants.length<c.ants.length+8);
-  if(c.ants.length>=12&&rich.length&&Math.random()<.4){
-    const e=rich[Math.floor(Math.random()*rich.length)];
-    c.tx=e.x;c.ty=e.y;c.raid=t+300;return;
-  }
-  let best=null,bd=1e9;
-  for(const f of sim.food){const d=Math.hypot(f.x-c.x,f.y-c.y);if(d<bd){bd=d;best=f;}}
-  if(best){c.tx=best.x;c.ty=best.y;}
+function getTile(gx, gy) {
+    const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
+    const data = ensureChunk(cx, cy);
+    const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const ly = ((gy % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    return data[ly * CHUNK_SIZE + lx];
 }
 
-function step(){
-  const t=++sim.tick,cols=sim.cols;
-  if(sim.food.length<160&&Math.random()<.5)spawnFood();
-  for(const c of cols){
-    if(c.bot&&t%30===0)botThink(c,t);
-    for(let i=c.brood.length-1;i>=0;i--){
-      if(--c.brood[i]<=0&&c.ants.length<MAXANT){c.brood.splice(i,1);addAnt(c);}
-      else if(c.brood[i]<0)c.brood[i]=0;
+function setTile(gx, gy, val) {
+    const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
+    const data = ensureChunk(cx, cy);
+    const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const ly = ((gy % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    data[ly * CHUNK_SIZE + lx] = val;
+}
+
+function isWall(gx, gy) { return getTile(gx, gy) !== 0; }
+function isRock(gx, gy) { return getTile(gx, gy) === 2; }
+
+let state = null;
+
+function freshState(){
+    return {
+        teams: [
+            { id: 0, name: 'Blue (You)', color: '#6f8fa8', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: true },
+            { id: 1, name: 'Red Team', color: '#cf5b4f', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false },
+            { id: 2, name: 'Green Team', color: '#7a9a5a', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false },
+            { id: 3, name: 'Orange Team', color: '#e0954f', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false }
+        ],
+        entities: [], jobs: [], surfaceItems: [], pheromones: [], particles: [], floatingTexts: [], splats: [], flies: [], brood: [],
+        controlledAnt: null, activeTool: 'pointer', isDrawing: false, shake: 0, time: 0, seedRespawnTimer: 900, gameOver: false
+    };
+}
+
+const STATS = {
+    queen: { hp: 200, dmg: 0, speed: 1.1 }, minor: { hp: 15, dmg: 2, speed: 3.3 },
+    major: { hp: 40, dmg: 8, speed: 2.4 }, super_major: { hp: 80, dmg: 15, speed: 1.8 }
+};
+
+class Particle {
+    constructor(x, y, color, speed = 4, size = null, gravity = 0) {
+        this.x = x; this.y = y; this.vx = (Math.random() - 0.5) * speed; this.vy = (Math.random() - 0.5) * speed;
+        this.life = 1.0; this.decay = Math.random() * 0.05 + 0.02; this.color = color; this.size = size || (Math.random() * 4 + 2); this.gravity = gravity;
     }
-    for(const a of c.ants){
-      let gx,gy;
-      if(a.carry){gx=c.x;gy=c.y;}
-      else if(c.recall){gx=c.x+Math.cos(a.ph)*a.r*.6;gy=c.y+Math.sin(a.ph)*a.r*.6;}
-      else{gx=c.tx+Math.cos(a.ph)*a.r;gy=c.ty+Math.sin(a.ph)*a.r;}
-      const dx=gx-a.x,dy=gy-a.y,d=Math.hypot(dx,dy)||1,sp=Math.min(3.2,d);
-      a.x=clamp(a.x+dx/d*sp,0,W);a.y=clamp(a.y+dy/d*sp,0,H);
-      if(a.carry){if(Math.hypot(c.x-a.x,c.y-a.y)<30)deliver(c,a);continue;}
-      for(let i=0;i<sim.food.length;i++){
-        const f=sim.food[i];
-        if(Math.abs(f.x-a.x)<14&&Math.abs(f.y-a.y)<14){a.carry=1;sim.food.splice(i,1);break;}
-      }
-      if(a.carry)continue;
-      for(const e of cols){
-        if(e===c||!e.brood.length)continue;
-        if(Math.hypot(e.x-a.x,e.y-a.y)<48){e.brood.pop();a.carry=2;break;} // steal brood
-      }
+    update() { this.x += this.vx; this.y += this.vy; this.vy += this.gravity; this.life -= this.decay; }
+    draw() { ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = this.color; ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size); ctx.globalAlpha = 1.0; }
+}
+class FloatingText {
+    constructor(x, y, text, color, size = 18) { this.x = x; this.y = y; this.text = text; this.color = color; this.life = 1.0; this.vy = -1; this.size = size; }
+    update() { this.y += this.vy; this.vy *= 0.97; this.life -= 0.018; }
+    draw() { ctx.globalAlpha = Math.max(0, this.life); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.font = `600 ${this.size}px Inter, Arial`; ctx.fillText(this.text, this.x + 1, this.y + 1); ctx.fillStyle = this.color; ctx.fillText(this.text, this.x, this.y); ctx.globalAlpha = 1.0; }
+}
+function spawnParticles(x, y, color, count = 5, speed = 4, size = null, gravity = 0) {
+    for (let i = 0; i < count; i++) state.particles.push(new Particle(x, y, color, speed, size, gravity));
+    if (state.particles.length > 200) state.particles.splice(0, state.particles.length - 200);
+}
+function spawnText(x, y, text, color, size) { state.floatingTexts.push(new FloatingText(x, y, text, color, size)); }
+function triggerShake(intensity) { state.shake = Math.max(state.shake, intensity); }
+function toast(msg) {
+    const wrap = document.getElementById('toast-wrap'); const el = document.createElement('div');
+    el.className = 'toast'; el.textContent = msg; wrap.appendChild(el); setTimeout(() => el.remove(), 3000);
+}
+
+function resolveCollision(entity) {
+    const radius = TILE_SIZE * 0.35; const left = entity.x - radius, right = entity.x + radius, top = entity.y - radius, bottom = entity.y + radius;
+    const minGx = Math.floor(left / TILE_SIZE), maxGx = Math.floor(right / TILE_SIZE), minGy = Math.floor(top / TILE_SIZE), maxGy = Math.floor(bottom / TILE_SIZE);
+    for (let gy = minGy; gy <= maxGy; gy++) {
+        for (let gx = minGx; gx <= maxGx; gx++) {
+            if (!isWall(gx, gy)) continue;
+            const tileLeft = gx * TILE_SIZE, tileRight = tileLeft + TILE_SIZE, tileTop = gy * TILE_SIZE, tileBottom = tileTop + TILE_SIZE;
+            const closestX = Math.max(tileLeft, Math.min(entity.x, tileRight)), closestY = Math.max(tileTop, Math.min(entity.y, tileBottom));
+            const dx = entity.x - closestX, dy = entity.y - closestY, dSq = dx * dx + dy * dy;
+            if (dSq < radius * radius && dSq > 0.0001) { const dist = Math.sqrt(dSq); const overlap = radius - dist; entity.x += (dx / dist) * overlap; entity.y += (dy / dist) * overlap; }
+        }
     }
-  }
-  const all=[];
-  for(const c of cols)for(const a of c.ants){a.c=c;all.push(a);}
-  for(let i=0;i<all.length;i++){
-    const a=all[i];
-    for(let j=i+1;j<all.length;j++){
-      const b=all[j];
-      if(a.c===b.c)continue;
-      if(Math.abs(a.x-b.x)<14&&Math.abs(a.y-b.y)<14){a.hp-=.1;b.hp-=.1;}
+}
+
+function lineCrossesWall(x1, y1, x2, y2) {
+    const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (TILE_SIZE * 0.5)));
+    for (let i = 1; i <= steps; i++) { const t = i / steps; if (isWall(Math.floor((x1 + (x2 - x1) * t) / TILE_SIZE), Math.floor((y1 + (y2 - y1) * t) / TILE_SIZE))) return true; }
+    return false;
+}
+function heuristic(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+
+function findPath(startX, startY, endX, endY, maxRadius = 120) {
+    if (startX === endX && startY === endY) return [];
+    if (isWall(endX, endY)) return null;
+    let openSet = [{ x: startX, y: startY, g: 0, f: heuristic({ x: startX, y: startY }, { x: endX, y: endY }), parent: null }];
+    let closedSet = new Set(); let iterations = 0; let closestNode = openSet[0]; let closestDist = closestNode.f;
+    while (openSet.length > 0 && iterations < 600) {
+        iterations++; openSet.sort((a, b) => a.f - b.f); let current = openSet.shift();
+        let dist = heuristic(current, {x: endX, y: endY});
+        if (dist < closestDist) { closestNode = current; closestDist = dist; }
+        if (current.x === endX && current.y === endY) { let path = []; let curr = current; while (curr.parent) { path.push({ x: curr.x, y: curr.y }); curr = curr.parent; } return path.reverse(); }
+        closedSet.add(`${current.x},${current.y}`);
+        if (Math.abs(current.x - startX) > maxRadius || Math.abs(current.y - startY) > maxRadius) continue;
+        let neighbors = [{ x: current.x, y: current.y - 1 }, { x: current.x, y: current.y + 1 }, { x: current.x - 1, y: current.y }, { x: current.x + 1, y: current.y }];
+        for (let n of neighbors) {
+            if (isWall(n.x, n.y) || closedSet.has(`${n.x},${n.y}`)) continue;
+            let gScore = current.g + 1; let existing = openSet.find(o => o.x === n.x && o.y === n.y);
+            if (!existing) openSet.push({ x: n.x, y: n.y, g: gScore, f: gScore + heuristic(n, { x: endX, y: endY }), parent: current });
+            else if (gScore < existing.g) { existing.g = gScore; existing.f = gScore + heuristic(n, { x: endX, y: endY }); existing.parent = current; }
+        }
     }
-  }
-  for(const c of cols){
-    c.ants=c.ants.filter(a=>{
-      if(a.hp>0)return true;
-      if(a.carry===1)sim.food.push({x:a.x,y:a.y});
-      return false;
+    if (closestNode && closestNode !== openSet[0]) { let path = []; let curr = closestNode; while (curr.parent) { path.push({ x: curr.x, y: curr.y }); curr = curr.parent; } return path.reverse(); }
+    return null;
+}
+
+function makeBrood(x, y, willHatchAs, teamId) {
+    return { kind: 'brood', stage: 'egg', x, y, timer: 1200, needsFood: false, fed: false, carriedBy: null, willHatchAs, teamId, id: Math.random().toString(36).slice(2) };
+}
+
+function findNearestPheromone(type, fromX, fromY, maxDistTiles, teamId) {
+    let best = null, bestDist = (maxDistTiles * TILE_SIZE) ** 2;
+    for (const p of state.pheromones) {
+        if (p.type !== type || p.teamId !== teamId) continue;
+        const d = distSq(p.x, p.y, fromX, fromY);
+        if (d < bestDist) { bestDist = d; best = p; }
+    }
+    return best;
+}
+
+function nearestOpenTile(gx, gy, maxRadius = 6) {
+    if (!isWall(gx, gy)) return { x: gx, y: gy };
+    for (let r = 1; r <= maxRadius; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+            for (let dy = -r; dy <= r; dy++) {
+                if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                if (!isWall(gx + dx, gy + dy)) return { x: gx + dx, y: gy + dy };
+            }
+        }
+    }
+    return null;
+}
+
+class Prey {
+    constructor(x, y) {
+        this.x = x; this.y = y; this.hp = 12; this.maxHp = 12; this.speed = 1.4; this.wanderTimer = 0; this.dir = { x: 0, y: 0 }; this.flash = 0; this.size = 15; this.id = Math.random().toString(36).slice(2);
+    }
+    update() {
+        if (this.flash > 0) this.flash--;
+        let threat = state.entities.find(e => e.type !== 'queen' && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.1) ** 2);
+        if (threat) {
+            let angle = Math.atan2(this.y - threat.y, this.x - threat.x);
+            let nx = this.x + Math.cos(angle) * this.speed * 1.6, ny = this.y + Math.sin(angle) * this.speed * 1.6;
+            if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) { this.x = nx; this.y = ny; }
+        } else {
+            this.wanderTimer--;
+            if (this.wanderTimer <= 0) { this.wanderTimer = 60 + Math.random() * 90; let angle = Math.random() * Math.PI * 2; this.dir = { x: Math.cos(angle), y: Math.sin(angle) }; }
+            let nx = this.x + this.dir.x * this.speed * 0.4, ny = this.y + this.dir.y * this.speed * 0.4;
+            if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) { this.x = nx; this.y = ny; }
+        }
+        let surf = surfaceHeightAt(Math.floor(this.x / TILE_SIZE));
+        this.y = Math.max((surf - 6) * TILE_SIZE, Math.min((surf - 1) * TILE_SIZE, this.y));
+    }
+    draw() {
+        ctx.save(); ctx.translate(this.x, this.y);
+        if (this.flash > 0) ctx.fillStyle = '#c17a5a'; else ctx.fillStyle = '#5a4636';
+        ctx.beginPath(); ctx.ellipse(0, 0, this.size / 2, this.size / 3, 0, 0, Math.PI * 2); ctx.fill();
+        if (this.hp < this.maxHp) { ctx.fillStyle = 'rgba(168,69,60,0.9)'; ctx.fillRect(-12, -this.size / 2 - 10, 24, 3); ctx.fillStyle = 'rgba(122,154,90,0.9)'; ctx.fillRect(-12, -this.size / 2 - 10, 24 * (this.hp / this.maxHp), 3); }
+        ctx.restore();
+    }
+}
+
+function spawnPrey() {
+    if (state.flies.length >= 25) return;
+    let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
+    let gx = originX + Math.floor((Math.random() - 0.5) * 160);
+    let surf = surfaceHeightAt(gx);
+    state.flies.push(new Prey(gx * TILE_SIZE + 20, (surf - 1 - Math.floor(Math.random() * 4)) * TILE_SIZE + 20));
+}
+
+class Ant {
+    constructor(type, x, y, teamId) {
+        this.type = type; this.x = x; this.y = y; this.team = teamId;
+        this.gx = Math.floor(x / TILE_SIZE); this.gy = Math.floor(y / TILE_SIZE);
+        this.state = 'IDLE'; this.path = []; this.job = null; this.pathTimer = 0;
+        this.maxHp = STATS[type].hp; this.hp = this.maxHp; this.dmg = STATS[type].dmg; this.baseSpeed = STATS[type].speed; this.speed = this.baseSpeed;
+        this.angle = 0; this.wobble = Math.random() * Math.PI; this.attackTimer = 0; this.flash = 0; this.underAttack = 0; this.alertTimer = 0;
+        this.carriedResource = null; this.carriedBrood = null; this.huntTargetId = null;
+    }
+
+    update() {
+        this.gx = Math.floor(this.x / TILE_SIZE); this.gy = Math.floor(this.y / TILE_SIZE);
+        if (this.flash > 0) this.flash--; if (this.underAttack > 0) this.underAttack--; if (this.alertTimer > 0) this.alertTimer--; if (this.pathTimer > 0) this.pathTimer--;
+        this.speed = (this.state === 'DEFENDING') ? 0 : this.baseSpeed;
+
+        if (state.controlledAnt === this) { this.handlePlayerControl(); resolveCollision(this); return; }
+        if (this.type === 'queen') { this.updateQueenAI(); resolveCollision(this); return; }
+
+        if (this.attackTimer > 0) this.attackTimer--;
+        let target = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2) ** 2);
+        if (target) {
+            if (this.state !== 'IDLE') { if (this.job) { this.job.assigned = false; this.job = null; } this.huntTargetId = null; this.state = 'IDLE'; }
+            this.path = []; this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+            if (this.attackTimer <= 0) {
+                target.hp -= this.dmg; target.flash = 10; target.underAttack = 300; this.attackTimer = 30;
+                spawnParticles(target.x, target.y, '#a8453c', 6, 6); triggerShake(2);
+                const lungeX = this.x + Math.cos(this.angle) * 8, lungeY = this.y + Math.sin(this.angle) * 8;
+                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+            }
+            resolveCollision(this); return;
+        }
+
+        if (this.path.length > 0) {
+            let tx = this.path[0].x * TILE_SIZE + TILE_SIZE / 2, ty = this.path[0].y * TILE_SIZE + TILE_SIZE / 2;
+            let dx = tx - this.x, dy = ty - this.y, dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
+            if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
+            else { this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed; this.angle = Math.atan2(dy, dx); this.wobble += 0.4; }
+        } else { this.handleStateLogic(); }
+        resolveCollision(this);
+    }
+
+    updateQueenAI() {
+        if (this.path.length === 0 && this.pathTimer <= 0 && Math.random() < 0.05 && pathfindsThisFrame < 2) {
+            pathfindsThisFrame++;
+            let nx = this.gx + Math.floor(Math.random() * 5) - 2, ny = this.gy + Math.floor(Math.random() * 5) - 1;
+            if (ny < SURFACE_Y + 2) ny = SURFACE_Y + 2;
+            if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+            this.pathTimer = 30;
+        }
+        if (this.path.length > 0) {
+            let tx = this.path[0].x * TILE_SIZE + TILE_SIZE / 2, ty = this.path[0].y * TILE_SIZE + TILE_SIZE / 2;
+            let dx = tx - this.x, dy = ty - this.y, dist = Math.sqrt(distSq(this.x, this.y, tx, ty));
+            if (dist < this.speed) { this.x = tx; this.y = ty; this.path.shift(); }
+            else { this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed; this.angle = Math.atan2(dy, dx); }
+        }
+    }
+
+    handlePlayerControl() {
+        let dx = 0, dy = 0;
+        if (keys.arrowup) dy -= this.baseSpeed; if (keys.arrowdown) dy += this.baseSpeed;
+        if (keys.arrowleft) dx -= this.baseSpeed; if (keys.arrowright) dx += this.baseSpeed;
+        if (dx !== 0 || dy !== 0) {
+            this.x += dx; this.y += dy; this.angle = Math.atan2(dy, dx); this.wobble += 0.5;
+        }
+        if (keys[' '] && !spacePressed) { spacePressed = true; this.performManualAction(); }
+    }
+
+    performManualAction() {
+        if (this.type === 'queen') return;
+        let enemy = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.5) ** 2);
+        if (enemy) {
+            enemy.hp -= this.dmg; enemy.flash = 10; enemy.underAttack = 300; spawnParticles(enemy.x, enemy.y, '#a8453c', 8, 6); triggerShake(3);
+            const lungeX = this.x + Math.cos(this.angle) * 10, lungeY = this.y + Math.sin(this.angle) * 10;
+            if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+            return;
+        }
+
+        let myTeam = state.teams[this.team];
+        let larvaHere = state.brood.find(b => b.teamId === this.team && !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === this.gx && b.y === this.gy);
+        if (larvaHere) {
+            if (this.state === 'CARRYING_RESOURCE' || myTeam.resources.seeds > 0 || myTeam.resources.meat > 0) {
+                if (this.state === 'CARRYING_RESOURCE') { this.carriedResource = null; this.state = 'IDLE'; }
+                else if (myTeam.resources.seeds > 0) myTeam.resources.seeds--;
+                else myTeam.resources.meat--;
+                larvaHere.fed = true; larvaHere.needsFood = false;
+                spawnParticles(this.x, this.y, '#7a9a5a', 10, 5); spawnText(this.x, this.y - 15, "Larva Fed", "#7a9a5a"); updateUI();
+                return;
+            }
+        }
+
+        let prey = state.flies.find(f => distSq(f.x, f.y, this.x, this.y) < (TILE_SIZE * 1.3) ** 2);
+        if (prey && !this.carriedResource && !this.carriedBrood) {
+            prey.hp -= this.dmg * 2; prey.flash = 10; spawnParticles(prey.x, prey.y, '#8a5a3a', 6, 5); triggerShake(2);
+            if (prey.hp <= 0) {
+                state.flies = state.flies.filter(f => f !== prey); spawnParticles(prey.x, prey.y, '#4a3728', 14, 6, null, 0.1);
+                let gx = Math.floor(prey.x / TILE_SIZE), gy = Math.floor(prey.y / TILE_SIZE);
+                state.surfaceItems.push({ type: 'meat', x: gx, y: gy }); state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
+            }
+            return;
+        }
+
+        if (this.state === 'CARRYING_DIRT') {
+            let tGx = this.gx + Math.round(Math.cos(this.angle)), tGy = this.gy + Math.round(Math.sin(this.angle));
+            if (!isWall(tGx, tGy) && !state.entities.some(e => e.gx === tGx && e.gy === tGy)) {
+                setTile(tGx, tGy, 1); spawnParticles(tGx * TILE_SIZE + 20, tGy * TILE_SIZE + 20, '#6b4a2b', 12, 3); triggerShake(3);
+            }
+            this.state = 'IDLE'; return;
+        }
+
+        if (this.state === 'CARRYING_RESOURCE') {
+            let queen = state.entities.find(e => e.type === 'queen' && e.team === this.team);
+            if (queen && distSq(this.x, this.y, queen.x, queen.y) < (TILE_SIZE * 1.2) ** 2) {
+                myTeam.queenHunger = Math.min(100, myTeam.queenHunger + 35);
+                if (this.carriedResource === 'seed') myTeam.resources.seeds++; else myTeam.resources.meat++;
+                updateUI(); spawnParticles(queen.x, queen.y - 10, this.carriedResource === 'seed' ? '#e0954f' : '#cf5b4f', 12, 5);
+                this.carriedResource = null; this.state = 'IDLE'; return;
+            }
+            state.surfaceItems.push({ type: this.carriedResource, x: this.gx, y: this.gy }); this.state = 'IDLE'; this.carriedResource = null; return;
+        }
+
+        if (this.state === 'CARRYING_BROOD') {
+            this.carriedBrood.x = this.gx; this.carriedBrood.y = this.gy; this.carriedBrood.carriedBy = null; this.carriedBrood = null; this.state = 'IDLE'; return;
+        }
+
+        let itemHere = state.surfaceItems.find(i => i.x === this.gx && i.y === this.gy);
+        if (itemHere) { this.carriedResource = itemHere.type; this.state = 'CARRYING_RESOURCE'; state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere); return; }
+
+        let broodHere = state.brood.find(b => b.teamId === this.team && !b.carriedBy && b.x === this.gx && b.y === this.gy);
+        if (broodHere) { this.carriedBrood = broodHere; broodHere.carriedBy = this; this.state = 'CARRYING_BROOD'; return; }
+
+        let tGx = this.gx + Math.round(Math.cos(this.angle)), tGy = this.gy + Math.round(Math.sin(this.angle));
+        if (isWall(tGx, tGy) && !isRock(tGx, tGy)) { setTile(tGx, tGy, 0); spawnParticles(tGx * TILE_SIZE + 20, tGy * TILE_SIZE + 20, '#4a3826', 15); this.state = 'CARRYING_DIRT'; }
+    }
+
+    handleStateLogic() {
+        if (this.type === 'queen') return;
+        let myTeam = state.teams[this.team];
+        let myQueen = state.entities.find(e => e.type === 'queen' && e.team === this.team);
+
+        let distressAnt = state.entities.find(e => e.team === this.team && e.underAttack > 0 && e !== this);
+        if (distressAnt && distSq(this.x, this.y, distressAnt.x, distressAnt.y) < (TILE_SIZE * 15) ** 2) {
+            if (this.state !== 'IDLE') { if (this.job) { this.job.assigned = false; this.job = null; } this.huntTargetId = null; this.state = 'IDLE'; }
+            if (this.pathTimer <= 0 && pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, distressAnt.gx, distressAnt.gy) || []; this.pathTimer = 20; }
+            this.alertTimer = 60; return;
+        }
+
+        if (this.state === 'IDLE' && (this.type === 'minor' || this.type === 'major') && this.pathTimer <= 0) {
+            let attackPh = findNearestPheromone('attack', this.x, this.y, 22, this.team);
+            if (attackPh && pathfindsThisFrame < 2) {
+                let openSpot = nearestOpenTile(Math.floor(attackPh.x / TILE_SIZE), Math.floor(attackPh.y / TILE_SIZE));
+                if (openSpot) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, openSpot.x, openSpot.y) || []; this.pathTimer = 25; return; }
+            }
+        }
+
+        if (this.state === 'IDLE') {
+            if (!this.job && (this.type === 'minor' || this.type === 'major')) {
+                if (myQueen) {
+                    let misplacedBrood = state.brood.find(b => b.teamId === this.team && !b.carriedBy && b.y < myQueen.gy - 2);
+                    if (misplacedBrood) {
+                        this.targetBroodId = misplacedBrood.id; this.state = 'FETCHING_BROOD';
+                        if (pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, misplacedBrood.x, misplacedBrood.y) || []; this.pathTimer = 20; }
+                        return;
+                    }
+                }
+                let hungryLarva = state.brood.find(b => b.teamId === this.team && !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && !state.jobs.some(j => j.type === 'FEED_LARVA' && j.broodId === b.id));
+                if (hungryLarva) state.jobs.push({ type: 'FEED_LARVA', x: hungryLarva.x, y: hungryLarva.y, broodId: hungryLarva.id, assigned: false });
+            }
+
+            let nestWellStocked = myTeam.resources.seeds >= 20 && myTeam.resources.meat >= 12 && myTeam.queenHunger > 60;
+
+            if (!this.job && (this.type === 'minor' || this.type === 'major') && state.flies.length > 0) {
+                let foragePh = findNearestPheromone('forage', this.x, this.y, 26, this.team);
+                if (Math.random() < (foragePh ? 0.35 : 0.10)) {
+                    let prey = state.flies.find(f => distSq(f.x, f.y, foragePh ? foragePh.x : this.x, foragePh ? foragePh.y : this.y) < (TILE_SIZE * 16) ** 2);
+                    if (prey) {
+                        this.huntTargetId = prey.id; this.state = 'HUNTING';
+                        if (pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || []; this.pathTimer = 20; }
+                        return;
+                    }
+                }
+            }
+
+            if (!this.job && !nestWellStocked && (this.type === 'minor' || this.type === 'major') && this.pathTimer <= 0) {
+                let foragePull = findNearestPheromone('forage', this.x, this.y, 26, this.team);
+                if (foragePull && pathfindsThisFrame < 2) {
+                    let openSpot = nearestOpenTile(Math.floor(foragePull.x / TILE_SIZE), Math.floor(foragePull.y / TILE_SIZE));
+                    if (openSpot && (openSpot.x !== this.gx || openSpot.y !== this.gy)) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, openSpot.x, openSpot.y) || []; this.pathTimer = 30; return; }
+                }
+            }
+
+            if (this.type === 'minor' || this.type === 'major') {
+                let job = state.jobs.find(j => !j.assigned && (j.type === 'DIG' || (j.type === 'HARVEST' && !nestWellStocked) || j.type === 'FEED_LARVA'));
+                if (job) this.assignJob(job);
+            }
+
+            if (!this.job && this.pathTimer <= 0 && Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++;
+                if (myQueen && (nestWellStocked || this.gy < SURFACE_Y)) {
+                    let nx = myQueen.gx + Math.floor(Math.random() * 7) - 3, ny = myQueen.gy + Math.floor(Math.random() * 5) - 2;
+                    this.path = findPath(this.gx, this.gy, isWall(nx, ny) ? myQueen.gx : nx, isWall(nx, ny) ? myQueen.gy : ny) || [];
+                } else {
+                    let nx = this.gx + Math.floor(Math.random() * 5) - 2, ny = this.gy + Math.floor(Math.random() * 5) - 2;
+                    if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                }
+                this.pathTimer = 30;
+            }
+        } else if (this.state === 'HUNTING') {
+            let prey = state.flies.find(f => f.id === this.huntTargetId);
+            if (!prey) { this.state = 'IDLE'; this.huntTargetId = null; return; }
+            let dist = distSq(prey.x, prey.y, this.x, this.y);
+            if (dist < (TILE_SIZE * 1.6) ** 2) {
+                if (this.attackTimer > 0) this.attackTimer--;
+                if (this.attackTimer <= 0) { prey.hp -= this.dmg * 1.5; prey.flash = 8; this.attackTimer = 18; spawnParticles(prey.x, prey.y, '#8a5a3a', 4, 4); }
+                this.angle = Math.atan2(prey.y - this.y, prey.x - this.x);
+                if (prey.hp <= 0) {
+                    state.flies = state.flies.filter(f => f !== prey); spawnParticles(prey.x, prey.y, '#4a3728', 14, 6, null, 0.1);
+                    let gx = Math.floor(prey.x / TILE_SIZE), gy = Math.floor(prey.y / TILE_SIZE);
+                    state.surfaceItems.push({ type: 'meat', x: gx, y: gy }); state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
+                    this.state = 'IDLE'; this.huntTargetId = null;
+                }
+                if (dist > (TILE_SIZE * 0.6) ** 2) { let a = Math.atan2(prey.y - this.y, prey.x - this.x); this.x += Math.cos(a) * this.speed * 0.6; this.y += Math.sin(a) * this.speed * 0.6; }
+            } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || []; this.pathTimer = 10;
+                if (this.path.length === 0) { this.state = 'IDLE'; this.huntTargetId = null; }
+            }
+        } else if (this.state === 'MOVING_TO_JOB') {
+            if (Math.sqrt(distSq(this.gx, this.gy, this.job.x, this.job.y)) <= 1) {
+                if (this.job.type === 'DIG') { this.state = 'DIGGING'; this.digTimer = 20; }
+                else if (this.job.type === 'HARVEST') { this.state = 'HARVESTING'; this.digTimer = 10; }
+                else if (this.job.type === 'FEED_LARVA') { this.state = 'FEEDING_LARVA'; this.digTimer = 15; }
+            } else { this.assignJob(this.job); }
+        } else if (this.state === 'DIGGING') {
+            this.digTimer--;
+            if (this.digTimer <= 0) {
+                setTile(this.job.x, this.job.y, 0); spawnParticles(this.job.x * TILE_SIZE + 20, this.job.y * TILE_SIZE + 20, '#4a3826', 15);
+                state.jobs = state.jobs.filter(j => j !== this.job); this.job = null; this.state = 'CARRYING_DIRT';
+                if (myQueen && pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, myQueen.gx, SURFACE_Y - 2) || []; } else { this.path = []; }
+            }
+        } else if (this.state === 'CARRYING_DIRT') {
+            if (this.gy < SURFACE_Y) { this.state = 'IDLE'; spawnParticles(this.x, this.y, '#6b4a2b', 8); }
+            else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++; this.path = myQueen ? (findPath(this.gx, this.gy, myQueen.gx, SURFACE_Y - 2) || []) : []; this.pathTimer = 30;
+            }
+        } else if (this.state === 'HARVESTING') {
+            this.digTimer--;
+            if (this.digTimer <= 0) {
+                let stillThere = state.surfaceItems.some(i => i.x === this.job.x && i.y === this.job.y);
+                state.jobs = state.jobs.filter(j => j !== this.job);
+                if (!stillThere) { this.job = null; this.state = 'IDLE'; return; }
+                state.surfaceItems = state.surfaceItems.filter(i => !(i.x === this.job.x && i.y === this.job.y));
+                this.carriedResource = this.job.resourceType; this.job = null; this.state = 'CARRYING_RESOURCE';
+                if (myQueen && pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, myQueen.gx, myQueen.gy) || []; }
+            }
+        } else if (this.state === 'FEEDING_LARVA') {
+            this.digTimer--;
+            if (this.digTimer <= 0) {
+                let brood = state.brood.find(b => b.id === this.job.broodId);
+                state.jobs = state.jobs.filter(j => j !== this.job);
+                if (brood && brood.stage === 'larva' && !brood.fed) {
+                    brood.fed = true; brood.needsFood = false; spawnParticles(brood.x * TILE_SIZE + 20, brood.y * TILE_SIZE + 20, '#7a9a5a', 10, 5);
+                    if (myTeam.resources.seeds > 0) myTeam.resources.seeds--; else if (myTeam.resources.meat > 0) myTeam.resources.meat--;
+                    updateUI();
+                }
+                this.job = null; this.state = 'IDLE';
+            }
+        } else if (this.state === 'CARRYING_RESOURCE') {
+            if (!myQueen) { this.state = 'IDLE'; this.carriedResource = null; return; }
+            if (distSq(this.x, this.y, myQueen.x, myQueen.y) < (TILE_SIZE * 1.2) ** 2) {
+                myTeam.queenHunger = Math.min(100, myTeam.queenHunger + 35);
+                if (this.carriedResource === 'seed') myTeam.resources.seeds++; else myTeam.resources.meat++;
+                updateUI(); this.carriedResource = null; this.state = 'IDLE';
+            } else if (this.path.length === 0 && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, myQueen.gx, myQueen.gy) || []; this.pathTimer = 30;
+            }
+        } else if (this.state === 'FETCHING_BROOD') {
+            let b = state.brood.find(br => br.id === this.targetBroodId && !br.carriedBy);
+            if (!b) { this.state = 'IDLE'; }
+            else if (this.gx === b.x && this.gy === b.y) { this.carriedBrood = b; b.carriedBy = this; this.state = 'CARRYING_BROOD'; this.path = []; }
+            else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, b.x, b.y) || []; this.pathTimer = 20; }
+        } else if (this.state === 'CARRYING_BROOD') {
+            if (myQueen) {
+                if (this.gy >= myQueen.gy - 1) {
+                    if (!state.brood.some(b => b !== this.carriedBrood && !b.carriedBy && b.x === this.gx && b.y === this.gy)) {
+                        this.carriedBrood.x = this.gx; this.carriedBrood.y = this.gy; this.carriedBrood.carriedBy = null; this.carriedBrood = null; this.state = 'IDLE';
+                    } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                        pathfindsThisFrame++; let nx = this.gx + Math.floor(Math.random() * 3) - 1, ny = this.gy + Math.floor(Math.random() * 3) - 1;
+                        if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || []; this.pathTimer = 10;
+                    }
+                } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, myQueen.gx, myQueen.gy) || []; this.pathTimer = 30; }
+            } else { this.carriedBrood.x = this.gx; this.carriedBrood.y = this.gy; this.carriedBrood.carriedBy = null; this.carriedBrood = null; this.state = 'IDLE'; }
+        }
+    }
+
+    assignJob(job) {
+        if (this.pathTimer > 0 || pathfindsThisFrame >= 2) return;
+        job.assigned = true; this.job = job; let targetX = job.x, targetY = job.y;
+        if (job.type === 'DIG') {
+            let adj = [{ x: job.x, y: job.y - 1 }, { x: job.x, y: job.y + 1 }, { x: job.x - 1, y: job.y }, { x: job.x + 1, y: job.y }].find(n => !isWall(n.x, n.y));
+            if (adj) { targetX = adj.x; targetY = adj.y; }
+        }
+        pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, targetX, targetY) || []; this.pathTimer = 15;
+        if (this.path.length > 0 || (this.gx === targetX && this.gy === targetY)) { this.state = 'MOVING_TO_JOB'; }
+        else { job.assigned = false; this.job = null; job.failCount = (job.failCount || 0) + 1; if (job.failCount > 3) state.jobs = state.jobs.filter(j => j !== job); }
+    }
+
+    draw() {
+        ctx.save(); ctx.translate(this.x, this.y);
+        let scaleX = 1, scaleY = 1;
+        if (this.path.length > 0 || (state.controlledAnt === this && (keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright))) {
+            scaleX = 1 + Math.sin(this.wobble * 2) * 0.15; scaleY = 1 - Math.sin(this.wobble * 2) * 0.15; ctx.rotate(this.angle + Math.sin(this.wobble) * 0.1);
+        } else { ctx.rotate(this.angle); }
+        ctx.scale(scaleX, scaleY);
+
+        let size = this.type === 'queen' ? TILE_SIZE * 1.5 : this.type === 'super_major' ? TILE_SIZE * 1.2 : TILE_SIZE;
+        ctx.fillStyle = this.type === 'queen' ? '#9b59b6' : this.type === 'super_major' ? '#a8453c' : this.type === 'major' ? '#c1793f' : '#d9a441';
+        ctx.beginPath(); ctx.ellipse(0, 0, size / 2, size / 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(size / 3, -2, 4, 4);
+
+        let teamColor = state.teams[this.team].color;
+        ctx.strokeStyle = teamColor; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(0, 0, size / 1.6, 0, Math.PI * 2); ctx.stroke();
+
+        if (this.flash > 0) { ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = 'rgba(207, 91, 79, 0.55)'; ctx.fillRect(-size, -size, size*2, size*2); ctx.globalCompositeOperation = 'source-over'; }
+
+        if (this.state === 'CARRYING_DIRT') { ctx.fillStyle = '#6b4a2b'; ctx.beginPath(); ctx.arc(size / 2, 0, 6, 0, Math.PI * 2); ctx.fill(); }
+        else if (this.state === 'CARRYING_RESOURCE') { ctx.fillStyle = this.carriedResource === 'seed' ? '#e0954f' : '#cf5b4f'; ctx.beginPath(); ctx.arc(size / 2, 0, 8, 0, Math.PI * 2); ctx.fill(); }
+        else if (this.state === 'CARRYING_BROOD' && this.carriedBrood) { ctx.fillStyle = '#e8ecec'; ctx.beginPath(); ctx.ellipse(size / 2, 0, 5, 7, 0, 0, Math.PI * 2); ctx.fill(); }
+
+        if (state.controlledAnt === this) { ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, size / 1.2, 0, Math.PI * 2); ctx.stroke(); }
+        if (this.hp < this.maxHp) { ctx.fillStyle = 'rgba(168,69,60,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30, 4); ctx.fillStyle = 'rgba(122,154,90,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30 * (this.hp / this.maxHp), 4); }
+        ctx.restore();
+    }
+}
+
+function respawnSeeds() {
+    let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
+    for (let i = 0; i < 5 && state.surfaceItems.length < 200; i++) {
+        let rx = originX + Math.floor((Math.random() - 0.5) * 200), surf = surfaceHeightAt(rx), ry = surf - 1 - Math.floor(Math.random() * 4);
+        if (isWall(rx, ry)) continue;
+        state.surfaceItems.push({ type: 'seed', x: rx, y: ry }); state.jobs.push({ type: 'HARVEST', x: rx, y: ry, resourceType: 'seed', assigned: false });
+    }
+}
+
+function layEgg(willHatchAs, teamId, silent = false) {
+    let queen = state.entities.find(e => e.type === 'queen' && e.team === teamId);
+    if (!queen) return null;
+    let spots = [{ x: queen.gx, y: queen.gy + 1 }, { x: queen.gx + 1, y: queen.gy }, { x: queen.gx - 1, y: queen.gy }, { x: queen.gx, y: queen.gy - 1 }].filter(s => !isWall(s.x, s.y) && !state.brood.some(b => b.x === s.x && b.y === s.y));
+    let spot = spots[Math.floor(Math.random() * spots.length)] || { x: queen.gx, y: queen.gy };
+    let egg = makeBrood(spot.x, spot.y, willHatchAs, teamId);
+    state.brood.push(egg);
+    if (!silent) spawnText(queen.x, queen.y - 30, "Egg Laid", "#e8ecec", 14);
+    if (teamId === 0) updateUI();
+    return egg;
+}
+
+function updateBrood() {
+    for (let b of state.brood) {
+        if (b.carriedBy) continue;
+        b.timer--;
+        if (b.stage === 'larva' && !b.needsFood && !b.fed && b.timer <= 600) { b.needsFood = true; }
+        if (b.timer <= 0) {
+            if (b.stage === 'egg') { b.stage = 'larva'; b.timer = 1800; b.needsFood = false; b.fed = false; }
+            else if (b.stage === 'larva') { if (b.needsFood && !b.fed) { b.timer = 30; continue; } b.stage = 'pupa'; b.timer = 1200; }
+            else if (b.stage === 'pupa') {
+                state.entities.push(new Ant(b.willHatchAs || 'minor', b.x * TILE_SIZE + 20, b.y * TILE_SIZE + 20, b.teamId));
+                b._hatched = true;
+            }
+        }
+    }
+    state.brood = state.brood.filter(b => !b._hatched);
+}
+
+function setTool(tool) {
+    state.activeTool = tool; document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active')); document.getElementById(`tool-${tool}`).classList.add('active');
+}
+document.querySelectorAll('.tool-btn').forEach(btn => btn.addEventListener('click', () => setTool(btn.dataset.tool)));
+
+function getWorldPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = (e.clientX - rect.left - canvas.width / 2) / camera.zoom + (canvas.width / 2 + camera.x);
+    const cy = (e.clientY - rect.top - canvas.height / 2) / camera.zoom + (canvas.height / 2 + camera.y);
+    return { cx, cy, gx: Math.floor(cx / TILE_SIZE), gy: Math.floor(cy / TILE_SIZE) };
+}
+
+canvas.addEventListener('mousedown', (e) => { if (gameRunning) { state.isDrawing = true; handleInput(e); } });
+canvas.addEventListener('mousemove', (e) => { if (gameRunning && state.isDrawing) handleInput(e); });
+canvas.addEventListener('mouseup', () => { if (state) state.isDrawing = false; });
+
+function handleInput(e) {
+    const { cx, cy, gx, gy } = getWorldPos(e);
+    if (state.activeTool === 'pointer' && e.type === 'mousedown') {
+        let clickedAnt = state.entities.find(ant => distSq(ant.x, ant.y, cx, cy) < TILE_SIZE * TILE_SIZE);
+        if (clickedAnt && clickedAnt.team === 0) {
+            state.controlledAnt = clickedAnt; if (clickedAnt.job) { clickedAnt.job.assigned = false; clickedAnt.job = null; } clickedAnt.path = [];
+            document.getElementById('context-menu-title').textContent = clickedAnt.type[0].toUpperCase() + clickedAnt.type.slice(1) + ' Selected';
+            document.getElementById('context-menu').style.display = 'flex'; return;
+        } else if (!clickedAnt) { state.controlledAnt = null; document.getElementById('context-menu').style.display = 'none'; }
+
+        if (isWall(gx, gy) && !isRock(gx, gy)) {
+            let isExposed = !isWall(gx, gy - 1) || !isWall(gx, gy + 1) || !isWall(gx - 1, gy) || !isWall(gx + 1, gy);
+            if (isExposed && !state.jobs.some(j => j.x === gx && j.y === gy && j.type === 'DIG')) {
+                state.jobs.push({ type: 'DIG', x: gx, y: gy, assigned: false }); spawnParticles(cx, cy, '#4a3826', 5);
+            }
+        }
+    } else if (state.activeTool !== 'pointer') {
+        state.pheromones.push({ x: cx, y: cy, type: state.activeTool, birthTime: state.time, teamId: 0 });
+    }
+}
+
+document.getElementById('release-btn').addEventListener('click', () => { state.controlledAnt = null; document.getElementById('context-menu').style.display = 'none'; });
+
+function buyAnt(type, seedCost, meatCost) {
+    let myTeam = state.teams[0];
+    if (myTeam.resources.seeds >= seedCost && myTeam.resources.meat >= meatCost) {
+        myTeam.resources.seeds -= seedCost; myTeam.resources.meat -= meatCost; layEgg(type, 0); updateUI();
+    }
+}
+document.getElementById('spawn-minor').onclick = () => buyAnt('minor', 2, 0);
+document.getElementById('spawn-major').onclick = () => buyAnt('major', 3, 1);
+document.getElementById('spawn-super').onclick = () => buyAnt('super_major', 4, 2);
+
+function updateUI() {
+    if (!state) return;
+    let pTeam = state.teams[0];
+    document.getElementById('count-seeds').innerText = pTeam.resources.seeds;
+    document.getElementById('count-meat').innerText = pTeam.resources.meat;
+    document.getElementById('count-brood').innerText = state.brood.filter(b => b.teamId === 0).length;
+    document.getElementById('spawn-minor').disabled = pTeam.resources.seeds < 2;
+    document.getElementById('spawn-major').disabled = pTeam.resources.seeds < 3 || pTeam.resources.meat < 1;
+    document.getElementById('spawn-super').disabled = pTeam.resources.seeds < 4 || pTeam.resources.meat < 2;
+    document.getElementById('queen-hunger-fill').style.width = Math.max(0, pTeam.queenHunger) + '%';
+    document.getElementById('queen-hunger-fill').style.background = pTeam.queenHunger < 30 ? 'var(--brick)' : (pTeam.queenHunger < 60 ? 'var(--clay)' : 'var(--moss)');
+
+    let lbHtml = '<strong>Arena Colonies</strong>';
+    state.teams.forEach(t => {
+        let pop = state.entities.filter(e => e.team === t.id).length;
+        let q = state.entities.find(e => e.type === 'queen' && e.team === t.id);
+        if (q) lbHtml += `<span style="color:${t.color}">${t.name}: ${pop}</span><br>`;
+        else lbHtml += `<span style="color:#555;text-decoration:line-through">${t.name}: ELIMINATED</span><br>`;
     });
-    if(!c.ants.length&&!c.brood.length){
-      if(!c.wait)c.wait=60;else if(--c.wait===0)spawnCol(c); // wiped out: respawn after ~2s
-    }
-  }
-  if(t%3===0){
-    const s={h:cols.filter(c=>!c.bot).length,
-      c:cols.map(c=>({i:c.id,n:c.n,k:c.k,x:c.x|0,y:c.y|0,f:c.food,b:c.brood.length,s:c.stolen,bot:c.bot?1:0,
-        a:c.ants.flatMap(a=>[a.x|0,a.y|0,a.carry])})),
-      fd:sim.food.flatMap(f=>[f.x|0,f.y|0])};
-    onSnap(s,sim.me.id);
-    for(const c of cols)if(c.conn&&c.conn.open)c.conn.send({...s,you:c.id});
-  }
+    document.getElementById('leaderboard').innerHTML = lbHtml;
 }
 
-/* ============ CLIENT / NETWORKING ============ */
-function connect(){
-  clearInterval(simTimer);sim=null;clientConn=null;
-  view={cols:{},food:[],you:-1,h:1};
-  if(peer){try{peer.destroy();}catch(e){}peer=null;}
-  const p=new Peer(LOBBY);peer=p;
-  net='Looking for a lobby...';
-  p.on('open',()=>startHost(p));            // lobby id was free: we are the host
-  p.on('error',e=>{
-    if(e.type==='unavailable-id'){p.destroy();joinClient();} // lobby exists: join it
-    else{net='Network error ('+e.type+') - retrying';setTimeout(connect,3000);}
-  });
+function updateActionPrompt() {
+    const el = document.getElementById('action-prompt');
+    if (!state.controlledAnt || state.controlledAnt.type === 'queen') { el.style.display = 'none'; return; }
+    const ant = state.controlledAnt;
+    let enemy = state.entities.find(e => e.team !== ant.team && e.hp > 0 && distSq(e.x, e.y, ant.x, ant.y) < (TILE_SIZE * 1.5) ** 2);
+    let queen = state.entities.find(e => e.type === 'queen' && e.team === ant.team);
+    let onQueen = queen && distSq(ant.x, ant.y, queen.x, queen.y) < (TILE_SIZE * 1.2) ** 2;
+    let broodHere = state.brood.find(b => b.teamId === ant.team && !b.carriedBy && b.x === ant.gx && b.y === ant.gy);
+    let itemHere = state.surfaceItems.find(i => i.x === ant.gx && i.y === ant.gy);
+    let larvaHere = state.brood.find(b => b.teamId === ant.team && !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === ant.gx && b.y === ant.gy);
+    
+    let msg = null;
+    if (enemy) msg = "Space: Attack enemy ant";
+    else if (larvaHere && (ant.state === 'CARRYING_RESOURCE' || itemHere || state.teams[ant.team].resources.seeds > 0)) msg = "Space: Feed larva";
+    else if (ant.state === 'CARRYING_DIRT') msg = "Space: Place wall";
+    else if (ant.state === 'CARRYING_RESOURCE' && onQueen) msg = "Space: Feed the queen";
+    else if (ant.state === 'CARRYING_RESOURCE') msg = "Space: Drop resource";
+    else if (ant.state === 'CARRYING_BROOD') msg = "Space: Set down brood";
+    else if (broodHere) msg = "Space: Pick up brood";
+    else if (itemHere) msg = "Space: Pick up " + itemHere.type;
+    
+    if (msg) { el.textContent = msg; el.style.display = 'block'; } else el.style.display = 'none';
 }
-function joinClient(){
-  const p=new Peer();peer=p;
-  p.on('error',()=>setTimeout(connect,1500));
-  p.on('open',()=>{
-    const c=p.connect(LOBBY,{reliable:true});clientConn=c;
-    const to=setTimeout(()=>{if(!c.open){p.destroy();connect();}},6000);
-    c.on('open',()=>{clearTimeout(to);net='Joined a lobby';c.send({t:'join',n:myName});});
-    c.on('data',d=>{
-      if(d.full){net='Lobby full - retrying';c.close();setTimeout(connect,4000);return;}
-      onSnap(d,d.you);
+
+function update() {
+    state.time += 0.05; pathfindsThisFrame = 0;
+
+    if (state.controlledAnt) {
+        camera.x += (state.controlledAnt.x - (canvas.width / 2) / camera.zoom - camera.x) * 0.1;
+        camera.y += (state.controlledAnt.y - (canvas.height / 2) / camera.zoom - camera.y) * 0.1;
+    } else {
+        let camSpeed = 10 / camera.zoom;
+        if (keys.w) camera.y -= camSpeed; if (keys.s) camera.y += camSpeed; if (keys.a) camera.x -= camSpeed; if (keys.d) camera.x += camSpeed;
+    }
+
+    state.entities.forEach(ant => ant.update());
+    state.entities = state.entities.filter(ant => {
+        if (ant.hp <= 0) {
+            spawnParticles(ant.x, ant.y, '#a8453c', 22, 5, null, 0.05);
+            if (ant.carriedBrood) { ant.carriedBrood.carriedBy = null; ant.carriedBrood.x = ant.gx; ant.carriedBrood.y = ant.gy; }
+            if (ant.carriedResource) state.surfaceItems.push({ type: ant.carriedResource, x: ant.gx, y: ant.gy });
+            if (ant === state.controlledAnt) { state.controlledAnt = null; document.getElementById('context-menu').style.display = 'none'; }
+            if (ant.type === 'queen') {
+                toast(state.teams[ant.team].name + " has been eliminated!");
+                if (ant.team === 0 && !state.gameOver) { state.gameOver = true; setTimeout(() => endGame(false), 2000); }
+            }
+            return false;
+        }
+        return true;
     });
-    c.on('close',()=>{clientConn=null;net='Host left - reconnecting';setTimeout(connect,800);});
-  });
+
+    // Check Win Condition
+    let aliveTeams = new Set(state.entities.filter(e => e.type === 'queen').map(e => e.team));
+    if (aliveTeams.size === 1 && aliveTeams.has(0) && !state.gameOver) { state.gameOver = true; setTimeout(() => endGame(true), 2000); }
+
+    state.flies.forEach(f => f.update()); if (Math.random() < 0.012) spawnPrey();
+    state.pheromones = state.pheromones.filter(p => (state.time - p.birthTime) < 500);
+    state.particles.forEach(p => p.update()); state.particles = state.particles.filter(p => p.life > 0);
+    state.floatingTexts.forEach(t => t.update()); state.floatingTexts = state.floatingTexts.filter(t => t.life > 0);
+
+    state.seedRespawnTimer--; if (state.seedRespawnTimer <= 0) { respawnSeeds(); state.seedRespawnTimer = 900; }
+
+    state.teams.forEach(team => {
+        let queen = state.entities.find(e => e.type === 'queen' && e.team === team.id);
+        if (queen) {
+            team.queenHunger -= 0.012;
+            if (team.queenHunger <= 0) { team.queenHunger = 0; queen.hp -= 0.03; }
+            if (team.queenHunger > 25 && Math.random() < 0.002) layEgg('minor', team.id, true);
+        }
+        
+        // Rival AI Macro Logic
+        if (!team.isPlayer && queen) {
+            if (team.resources.seeds >= 4 && team.resources.meat >= 2 && Math.random() < 0.05) { team.resources.seeds -= 4; team.resources.meat -= 2; layEgg('super_major', team.id, true); }
+            else if (team.resources.seeds >= 3 && team.resources.meat >= 1 && Math.random() < 0.05) { team.resources.seeds -= 3; team.resources.meat -= 1; layEgg('major', team.id, true); }
+            else if (team.resources.seeds >= 2 && Math.random() < 0.1) { team.resources.seeds -= 2; layEgg('minor', team.id, true); }
+
+            let myPop = state.entities.filter(e => e.team === team.id).length;
+            if (myPop > 12 && Math.random() < 0.005) {
+                let enemyQueens = state.entities.filter(e => e.type === 'queen' && e.team !== team.id);
+                if (enemyQueens.length > 0) {
+                    let targetQueen = enemyQueens[Math.floor(Math.random() * enemyQueens.length)];
+                    state.pheromones.push({ x: targetQueen.x, y: targetQueen.y, type: 'attack', birthTime: state.time, teamId: team.id });
+                }
+            }
+        }
+    });
+
+    updateBrood();
+    if (state.shake > 0) { state.shake *= 0.9; if (state.shake < 0.5) state.shake = 0; }
+    updateActionPrompt(); if (Math.floor(state.time * 100) % 20 === 0) updateUI();
 }
 
-function onSnap(s,you){
-  view.you=you;view.h=s.h;view.food=s.fd;
-  const seen={};
-  for(const c of s.c){
-    seen[c.i]=1;
-    const v=view.cols[c.i]||(view.cols[c.i]={ants:[]});
-    Object.assign(v,{i:c.i,n:c.n,k:c.k,x:c.x,y:c.y,f:c.f,b:c.b,s:c.s,bot:c.bot});
-    const n=c.a.length/3;
-    for(let q=0;q<n;q++){
-      const o=q*3,a=v.ants[q]||(v.ants[q]={x:c.a[o],y:c.a[o+1]});
-      a.tx=c.a[o];a.ty=c.a[o+1];a.c=c.a[o+2];
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save();
+    let dx = (Math.random() - 0.5) * state.shake, dy = (Math.random() - 0.5) * state.shake;
+    ctx.translate(Math.floor(canvas.width / 2 + dx), Math.floor(canvas.height / 2 + dy));
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.translate(-Math.floor(canvas.width / 2 + camera.x), -Math.floor(canvas.height / 2 + camera.y));
+
+    const viewLeft = camera.x - TILE_SIZE * 3, viewRight = camera.x + canvas.width / camera.zoom + TILE_SIZE * 3;
+    const viewTop = camera.y - TILE_SIZE * 3, viewBottom = camera.y + canvas.height / camera.zoom + TILE_SIZE * 3;
+    const gxMin = Math.floor(viewLeft / TILE_SIZE), gxMax = Math.ceil(viewRight / TILE_SIZE);
+    const gyMin = Math.floor(viewTop / TILE_SIZE), gyMax = Math.ceil(viewBottom / TILE_SIZE);
+
+    let skyGrad = ctx.createLinearGradient(0, (SURFACE_Y - 15) * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE);
+    skyGrad.addColorStop(0, '#7d9a52'); skyGrad.addColorStop(1, '#6a8641');
+    ctx.fillStyle = skyGrad; ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE - gyMin * TILE_SIZE));
+    ctx.fillStyle = '#100d09'; ctx.fillRect(gxMin * TILE_SIZE, Math.max(gyMin, SURFACE_Y) * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, (gyMax - gyMin + 1) * TILE_SIZE);
+
+    for (let gy = gyMin; gy <= gyMax; gy++) {
+        for (let gx = gxMin; gx <= gxMax; gx++) {
+            const t = getTile(gx, gy);
+            if (t === 1) { ctx.fillStyle = '#4a3826'; ctx.fillRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE); ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.strokeRect(gx * TILE_SIZE, gy * TILE_SIZE, TILE_SIZE, TILE_SIZE); }
+            else if (t === 2) { ctx.fillStyle = '#33333a'; ctx.beginPath(); ctx.arc(gx * TILE_SIZE + 20, gy * TILE_SIZE + 20, 19, 0, Math.PI * 2); ctx.fill(); }
+        }
     }
-    v.ants.length=n;
-  }
-  for(const k in view.cols)if(!seen[k])delete view.cols[k];
-  updateUI();
+
+    function inView(x, y) { return x >= viewLeft && x <= viewRight && y >= viewTop && y <= viewBottom; }
+
+    ctx.fillStyle = 'rgba(224, 149, 79, 0.28)'; state.jobs.forEach(job => { if (job.type === 'DIG' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); });
+    
+    state.pheromones.forEach(p => {
+        if (!inView(p.x, p.y)) return;
+        let alpha = Math.max(0, 1 - ((state.time - p.birthTime) / 500)) * 0.55;
+        ctx.globalAlpha = alpha; ctx.fillStyle = p.type === 'forage' ? '#7a9a5a' : '#a8453c';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.globalAlpha = 1.0;
+
+    state.surfaceItems.forEach(item => {
+        let ix = item.x * TILE_SIZE + TILE_SIZE / 2, iy = item.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(ix, iy)) return;
+        ctx.fillStyle = item.type === 'seed' ? '#e0954f' : '#cf5b4f'; ctx.beginPath(); ctx.arc(ix, iy, TILE_SIZE * 0.3, 0, Math.PI * 2); ctx.fill();
+    });
+
+    state.brood.forEach(b => {
+        if (b.carriedBy) return;
+        let bx = b.x * TILE_SIZE + TILE_SIZE / 2, by = b.y * TILE_SIZE + TILE_SIZE / 2;
+        if (!inView(bx, by)) return;
+        ctx.fillStyle = b.stage === 'egg' ? '#e8ecec' : b.stage === 'larva' ? '#ede6cf' : '#cdb98c';
+        ctx.beginPath(); ctx.ellipse(bx, by, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+    });
+
+    state.flies.forEach(f => { if (inView(f.x, f.y)) f.draw(); });
+    state.entities.forEach(ant => { if (inView(ant.x, ant.y)) ant.draw(); });
+    state.particles.forEach(p => { if (inView(p.x, p.y)) p.draw(); });
+    state.floatingTexts.forEach(t => { if (inView(t.x, t.y)) t.draw(); });
+    ctx.restore();
 }
 
-/* ============ INPUT ============ */
-function setT(e){tgt.x=(e.clientX-cv.width/2)/Z+cam.x;tgt.y=(e.clientY-cv.height/2)/Z+cam.y;}
-cv.addEventListener('pointermove',setT);cv.addEventListener('pointerdown',setT);
-addEventListener('keydown',e=>{if(e.code==='Space'){tgt.r=1;e.preventDefault();}});
-addEventListener('keyup',e=>{if(e.code==='Space')tgt.r=0;});
-const rc=$('rc');rc.onpointerdown=()=>tgt.r=1;rc.onpointerup=rc.onpointerleave=()=>tgt.r=0;
-if(matchMedia('(pointer:coarse)').matches)rc.style.display='block';
-setInterval(()=>{
-  if(sim&&sim.me){sim.me.tx=tgt.x;sim.me.ty=tgt.y;sim.me.recall=tgt.r;}
-  else if(clientConn&&clientConn.open)clientConn.send({t:'tgt',x:tgt.x|0,y:tgt.y|0,r:tgt.r});
-},66);
-
-/* ============ UI + RENDER ============ */
-function updateUI(){
-  const m=view.cols[view.you],list=Object.values(view.cols).sort((a,b)=>b.ants.length-a.ants.length);
-  if(m)$('hud').textContent=`Ants ${m.ants.length} · Brood ${m.b} · Food ${m.f}/2 · Stolen ${m.s}`;
-  const lb=$('lb');lb.textContent='';
-  list.slice(0,6).forEach(v=>{
-    const d=document.createElement('div');
-    d.textContent=`${v.n}${v.bot?' (bot)':''}  ${v.ants.length}`;
-    d.style.color=COL[v.k];if(v.i===view.you)d.style.fontWeight='700';
-    lb.appendChild(d);
-  });
-  $('st').textContent=`${net} · ${view.h} player${view.h===1?'':'s'}, ${list.length-view.h} bot${list.length-view.h===1?'':'s'}`;
+function resetGameState(){
+    chunks.clear(); decorations.clear(); surfaceCache.clear();
+    state = freshState();
+    
+    // Spawn 4 rival colonies far apart
+    const startXs = [0, 3200, -3200, 6400];
+    startXs.forEach((startX, idx) => {
+        let gx = Math.floor(startX / TILE_SIZE);
+        for (let y = SURFACE_Y - 1; y < SURFACE_Y + 5; y++) setTile(gx, y, 0);
+        for (let cy = SURFACE_Y + 5; cy <= SURFACE_Y + 7; cy++) { for (let cx = gx - 3; cx <= gx + 3; cx++) setTile(cx, cy, 0); }
+        state.entities.push(new Ant('queen', startX, (SURFACE_Y + 6) * TILE_SIZE + 20, idx));
+        for (let i = 0; i < 8; i++) state.entities.push(new Ant('minor', startX, (SURFACE_Y + 6) * TILE_SIZE + 20, idx));
+    });
+    
+    camera.x = -canvas.width / 2; camera.y = ((SURFACE_Y + 5) * TILE_SIZE) - canvas.height / 2;
+    for (let i = 0; i < 15; i++) spawnPrey();
+    setTool('pointer'); document.getElementById('context-menu').style.display = 'none'; updateUI();
 }
 
-function draw(){
-  requestAnimationFrame(draw);
-  const m=view.cols[view.you];
-  if(m){
-    let sx=m.x,sy=m.y;
-    if(m.ants.length){sx=sy=0;for(const a of m.ants){sx+=a.x;sy+=a.y;}sx/=m.ants.length;sy/=m.ants.length;}
-    cam.x+=(sx-cam.x)*.08;cam.y+=(sy-cam.y)*.08;
-  }
-  cx.fillStyle='#15120d';cx.fillRect(0,0,cv.width,cv.height);
-  cx.save();cx.translate(cv.width/2,cv.height/2);cx.scale(Z,Z);cx.translate(-cam.x,-cam.y);
-  cx.fillStyle='#4a3826';cx.fillRect(0,0,W,H);
-  cx.strokeStyle='rgba(0,0,0,.14)';cx.lineWidth=1;cx.beginPath();
-  for(let x=0;x<=W;x+=100){cx.moveTo(x,0);cx.lineTo(x,H);}
-  for(let y=0;y<=H;y+=100){cx.moveTo(0,y);cx.lineTo(W,y);}
-  cx.stroke();
-  for(let i=0;i<view.food.length;i+=2){
-    const x=view.food[i],y=view.food[i+1];
-    if(img.nut.complete&&img.nut.naturalWidth)cx.drawImage(img.nut,x-9,y-9,18,18);
-    else{cx.fillStyle='#e0954f';cx.beginPath();cx.arc(x,y,6,0,6.28);cx.fill();}
-  }
-  for(const k in view.cols){
-    const v=view.cols[k],col=COL[v.k];
-    cx.fillStyle=col;cx.globalAlpha=.3;cx.beginPath();cx.arc(v.x,v.y,36,0,6.28);cx.fill();cx.globalAlpha=1;
-    cx.strokeStyle=col;cx.lineWidth=3;cx.stroke();
-    if(img.queen.complete&&img.queen.naturalWidth)cx.drawImage(img.queen,v.x-20,v.y-20,40,40);
-    for(let i=0;i<Math.min(v.b,24);i++){
-      const an=i/Math.min(v.b,24)*6.28;
-      cx.fillStyle='#e8ecec';cx.beginPath();cx.ellipse(v.x+Math.cos(an)*28,v.y+Math.sin(an)*28,3,4.5,an,0,6.28);cx.fill();
+let lastTime = 0;
+function loop(timestamp) {
+    requestAnimationFrame(loop);
+    if (!lastTime) lastTime = timestamp;
+    let elapsed = timestamp - lastTime;
+    if (elapsed >= 1000 / TARGET_FPS) {
+        lastTime = timestamp - (elapsed % (1000 / TARGET_FPS));
+        if (gameRunning && state) { update(); draw(); }
     }
-    for(const a of v.ants){
-      a.x+=(a.tx-a.x)*.35;a.y+=(a.ty-a.y)*.35;
-      cx.fillStyle=col;cx.beginPath();cx.arc(a.x,a.y,5,0,6.28);cx.fill();
-      cx.fillStyle='#15120d';cx.beginPath();cx.arc(a.x,a.y,2,0,6.28);cx.fill();
-      if(a.c){cx.fillStyle=a.c===1?'#e0954f':'#e8ecec';cx.beginPath();cx.arc(a.x,a.y-7,3.5,0,6.28);cx.fill();}
-    }
-    cx.fillStyle='#f2e9d8';cx.font='600 13px system-ui';cx.textAlign='center';
-    cx.fillText(v.n+(k==view.you?' (you)':''),v.x,v.y-46);
-  }
-  cx.restore();
 }
-requestAnimationFrame(draw);
-
-$('go').onclick=()=>{myName=($('nm').value.trim()||'Ant').slice(0,12);$('menu').style.display='none';connect();};
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
