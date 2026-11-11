@@ -123,7 +123,7 @@
         <span class="sub">Multiplayer-Style Arena</span>
       </h1>
       <hr class="title-rule">
-      <p class="lede">Compete against rival AI colonies in a massive underground arena. Grow your population, harvest resources, and raid enemy queens to be the last colony standing.</p>
+      <p class="lede">Compete against rival AI colonies across four distinct dirt mountains. Grow your population, harvest resources, and kidnap enemy brood to convert them to your side!</p>
       <div class="menu-stack">
         <button class="menu-btn primary" id="btn-launch">
           <span>Enter Arena</span>
@@ -269,8 +269,12 @@ let TARGET_FPS = 60;
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const TILE_SIZE = 40;
-const SURFACE_Y = 15;
 const CHUNK_SIZE = 16;
+
+// MAP BOUNDS & MOUNDS
+const WORLD_MIN_GX = -200;
+const WORLD_MAX_GX = 200;
+const MOUND_CENTERS = [-150, -50, 50, 150];
 
 const camera = { x: 0, y: 0, zoom: 1.0 };
 const keys = { w: false, a: false, s: false, d: false, arrowup: false, arrowdown: false, arrowleft: false, arrowright: false, ' ': false };
@@ -307,8 +311,20 @@ function hash2(x, y) { let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123; 
 
 function surfaceHeightAt(gx) {
     if (surfaceCache.has(gx)) return surfaceCache.get(gx);
-    let val = SURFACE_Y + Math.round(Math.sin(gx * 0.07) * 2 + Math.sin(gx * 0.021) * 3) + Math.round(Math.sin(gx * 0.004) * 12);
-    surfaceCache.set(gx, val); return val;
+    let y = 45; // Valley floor
+    for (let c of MOUND_CENTERS) {
+        let dist = Math.abs(gx - c);
+        if (dist < 35) {
+            // Cosine interpolation for smooth hill
+            let h = 15 + (45 - 15) * (1 - Math.cos((dist / 35) * (Math.PI / 2)));
+            y = Math.min(y, h);
+        }
+    }
+    // Add slight noise
+    y += Math.sin(gx * 0.2) * 1.5;
+    let val = Math.floor(y);
+    surfaceCache.set(gx, val);
+    return val;
 }
 
 function generateChunk(cx, cy) {
@@ -318,17 +334,25 @@ function generateChunk(cx, cy) {
     for (let ly = 0; ly < CHUNK_SIZE; ly++) {
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
             const gx = baseX + lx, gy = baseY + ly;
+            if (gx < WORLD_MIN_GX || gx > WORLD_MAX_GX) {
+                data[ly * CHUNK_SIZE + lx] = 0; // Empty outside world
+                continue;
+            }
             const surf = surfaceHeightAt(gx);
-            let val = (gy < surf) ? 0 : 1;
-            if (val === 1) {
-                if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2;
-                if (gy > surf + 4 && hash2(gx * 0.09 + 50, gy * 0.09 + 50) > 0.965) val = 0;
+            let val = 0;
+            if (gy >= 48) val = 2; // Indestructible bedrock floor
+            else if (gy >= surf) {
+                val = 1; // Dirt
+                if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2; // Random rocks
+                if (gy > surf + 4 && hash2(gx * 0.09 + 50, gy * 0.09 + 50) > 0.965) val = 0; // Caves
             }
             data[ly * CHUNK_SIZE + lx] = val;
         }
     }
     for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        const gx = baseX + lx; const surf = surfaceHeightAt(gx);
+        const gx = baseX + lx; 
+        if (gx < WORLD_MIN_GX || gx > WORLD_MAX_GX) continue;
+        const surf = surfaceHeightAt(gx);
         if (surf >= baseY && surf < baseY + CHUNK_SIZE) {
             const r = hash2(gx * 5.3, 91.1);
             if (r > 0.82) decos.push({ type: 'grass', x: gx, y: surf - 1 });
@@ -349,6 +373,7 @@ function ensureChunk(cx, cy) {
 }
 
 function getTile(gx, gy) {
+    if (gx < WORLD_MIN_GX || gx > WORLD_MAX_GX) return 0;
     const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
     const data = ensureChunk(cx, cy);
     const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
@@ -357,6 +382,7 @@ function getTile(gx, gy) {
 }
 
 function setTile(gx, gy, val) {
+    if (gx < WORLD_MIN_GX || gx > WORLD_MAX_GX) return;
     const cx = Math.floor(gx / CHUNK_SIZE), cy = Math.floor(gy / CHUNK_SIZE);
     const data = ensureChunk(cx, cy);
     const lx = ((gx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
@@ -498,8 +524,17 @@ function drawFoodIcon(x, y, type, size) {
     ctx.restore();
 }
 
-function drawBroodShape(x, y, stage) {
+function drawBroodShape(x, y, stage, teamId) {
     ctx.save(); ctx.translate(x, y);
+    
+    // Draw team aura
+    if (teamId !== undefined && state.teams[teamId]) {
+        ctx.fillStyle = state.teams[teamId].color;
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1.0;
+    }
+
     if (stage === 'egg') {
         ctx.fillStyle = '#e8ecec'; ctx.beginPath(); ctx.ellipse(0, 0, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#6f8fa8'; ctx.lineWidth = 1; ctx.stroke();
@@ -558,9 +593,8 @@ class Prey {
 }
 
 function spawnPrey() {
-    if (state.flies.length >= 25) return;
-    let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
-    let gx = originX + Math.floor((Math.random() - 0.5) * 160);
+    if (state.flies.length >= 35) return;
+    let gx = WORLD_MIN_GX + 10 + Math.floor(Math.random() * (WORLD_MAX_GX - WORLD_MIN_GX - 20));
     let surf = surfaceHeightAt(gx);
     state.flies.push(new Prey(gx * TILE_SIZE + 20, (surf - 1 - Math.floor(Math.random() * 4)) * TILE_SIZE + 20));
 }
@@ -576,6 +610,10 @@ class Ant {
     }
 
     update() {
+        // Clamp to world bounds
+        if (this.x < WORLD_MIN_GX * TILE_SIZE) this.x = WORLD_MIN_GX * TILE_SIZE;
+        if (this.x > WORLD_MAX_GX * TILE_SIZE) this.x = WORLD_MAX_GX * TILE_SIZE;
+
         this.gx = Math.floor(this.x / TILE_SIZE); this.gy = Math.floor(this.y / TILE_SIZE);
         if (this.flash > 0) this.flash--; if (this.underAttack > 0) this.underAttack--; if (this.alertTimer > 0) this.alertTimer--; if (this.pathTimer > 0) this.pathTimer--;
         this.speed = (this.state === 'DEFENDING') ? 0 : this.baseSpeed;
@@ -686,13 +724,27 @@ class Ant {
         }
 
         if (this.state === 'CARRYING_BROOD') {
+            let myQueen = state.entities.find(e => e.type === 'queen' && e.team === this.team);
+            if (myQueen && distSq(this.x, this.y, myQueen.x, myQueen.y) < (TILE_SIZE * 4) ** 2) {
+                if (!state.brood.some(b => b !== this.carriedBrood && !b.carriedBy && b.x === this.gx && b.y === this.gy)) {
+                    this.carriedBrood.x = this.gx; this.carriedBrood.y = this.gy; this.carriedBrood.carriedBy = null;
+                    // KIDNAP CONVERSION
+                    if (this.carriedBrood.teamId !== this.team) {
+                        this.carriedBrood.teamId = this.team;
+                        spawnText(this.x, this.y - 20, "Converted!", state.teams[this.team].color);
+                    }
+                    this.carriedBrood = null; this.state = 'IDLE'; return;
+                }
+            }
+            // Drop normally if not near queen
             this.carriedBrood.x = this.gx; this.carriedBrood.y = this.gy; this.carriedBrood.carriedBy = null; this.carriedBrood = null; this.state = 'IDLE'; return;
         }
 
         let itemHere = state.surfaceItems.find(i => i.x === this.gx && i.y === this.gy);
         if (itemHere) { this.carriedResource = itemHere.type; this.state = 'CARRYING_RESOURCE'; state.surfaceItems = state.surfaceItems.filter(i => i !== itemHere); return; }
 
-        let broodHere = state.brood.find(b => b.teamId === this.team && !b.carriedBy && b.x === this.gx && b.y === this.gy);
+        // Pick up ANY brood (own or enemy)
+        let broodHere = state.brood.find(b => !b.carriedBy && b.x === this.gx && b.y === this.gy);
         if (broodHere) { this.carriedBrood = broodHere; broodHere.carriedBy = this; this.state = 'CARRYING_BROOD'; return; }
 
         let tGx = this.gx + Math.round(Math.cos(this.angle)), tGy = this.gy + Math.round(Math.sin(this.angle));
@@ -720,6 +772,16 @@ class Ant {
         }
 
         if (this.state === 'IDLE') {
+            // 1. Look for enemy brood to kidnap!
+            if (!this.job && (this.type === 'minor' || this.type === 'major')) {
+                let enemyBrood = state.brood.find(b => b.teamId !== this.team && !b.carriedBy && distSq(b.x * TILE_SIZE, b.y * TILE_SIZE, this.x, this.y) < (TILE_SIZE * 12) ** 2);
+                if (enemyBrood) {
+                    this.targetBroodId = enemyBrood.id; this.state = 'FETCHING_BROOD';
+                    if (pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, enemyBrood.x, enemyBrood.y) || []; this.pathTimer = 20; }
+                    return;
+                }
+            }
+
             if (!this.job && (this.type === 'minor' || this.type === 'major')) {
                 if (myQueen) {
                     let misplacedBrood = state.brood.find(b => b.teamId === this.team && !b.carriedBy && b.y < myQueen.gy - 2);
@@ -850,9 +912,15 @@ class Ant {
             else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, b.x, b.y) || []; this.pathTimer = 20; }
         } else if (this.state === 'CARRYING_BROOD') {
             if (myQueen) {
-                if (this.gy >= myQueen.gy - 1) {
+                if (distSq(this.x, this.y, myQueen.x, myQueen.y) < (TILE_SIZE * 3) ** 2) {
                     if (!state.brood.some(b => b !== this.carriedBrood && !b.carriedBy && b.x === this.gx && b.y === this.gy)) {
-                        this.carriedBrood.x = this.gx; this.carriedBrood.y = this.gy; this.carriedBrood.carriedBy = null; this.carriedBrood = null; this.state = 'IDLE';
+                        this.carriedBrood.x = this.gx; this.carriedBrood.y = this.gy; this.carriedBrood.carriedBy = null;
+                        // KIDNAP CONVERSION
+                        if (this.carriedBrood.teamId !== this.team) {
+                            this.carriedBrood.teamId = this.team;
+                            spawnText(this.x, this.y - 20, "Converted!", state.teams[this.team].color);
+                        }
+                        this.carriedBrood = null; this.state = 'IDLE';
                     } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
                         pathfindsThisFrame++; let nx = this.gx + Math.floor(Math.random() * 3) - 1, ny = this.gy + Math.floor(Math.random() * 3) - 1;
                         if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || []; this.pathTimer = 10;
@@ -914,7 +982,7 @@ class Ant {
             else { ctx.fillStyle = '#6b4a2b'; ctx.beginPath(); ctx.arc(drawW / 2, 0, 6, 0, Math.PI * 2); ctx.fill(); }
         }
         else if (this.state === 'CARRYING_RESOURCE') { drawFoodIcon(drawW / 2, 0, this.carriedResource, 16); }
-        else if (this.state === 'CARRYING_BROOD' && this.carriedBrood) { drawBroodShape(drawW / 2, 0, this.carriedBrood.stage); }
+        else if (this.state === 'CARRYING_BROOD' && this.carriedBrood) { drawBroodShape(drawW / 2, 0, this.carriedBrood.stage, this.carriedBrood.teamId); }
 
         if (state.controlledAnt === this) { ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, size / 1.2, 0, Math.PI * 2); ctx.stroke(); }
         if (this.hp < this.maxHp) { ctx.fillStyle = 'rgba(168,69,60,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30, 4); ctx.fillStyle = 'rgba(122,154,90,0.9)'; ctx.fillRect(-15, -size / 2 - 10, 30 * (this.hp / this.maxHp), 4); }
@@ -925,9 +993,10 @@ class Ant {
 function respawnSeeds() {
     let originX = Math.floor((camera.x + (canvas.width / 2) / camera.zoom) / TILE_SIZE);
     for (let i = 0; i < 5 && state.surfaceItems.length < 200; i++) {
-        let rx = originX + Math.floor((Math.random() - 0.5) * 200), surf = surfaceHeightAt(rx), ry = surf - 1 - Math.floor(Math.random() * 4);
-        if (isWall(rx, ry)) continue;
-        state.surfaceItems.push({ type: 'seed', x: rx, y: ry }); state.jobs.push({ type: 'HARVEST', x: rx, y: ry, resourceType: 'seed', assigned: false });
+        let gx = WORLD_MIN_GX + 10 + Math.floor(Math.random() * (WORLD_MAX_GX - WORLD_MIN_GX - 20));
+        let surf = surfaceHeightAt(gx), ry = surf - 1 - Math.floor(Math.random() * 4);
+        if (isWall(gx, ry)) continue;
+        state.surfaceItems.push({ type: 'seed', x: gx, y: ry }); state.jobs.push({ type: 'HARVEST', x: gx, y: ry, resourceType: 'seed', assigned: false });
     }
 }
 
@@ -1038,7 +1107,7 @@ function updateActionPrompt() {
     let enemy = state.entities.find(e => e.team !== ant.team && e.hp > 0 && distSq(e.x, e.y, ant.x, ant.y) < (TILE_SIZE * 1.5) ** 2);
     let queen = state.entities.find(e => e.type === 'queen' && e.team === ant.team);
     let onQueen = queen && distSq(ant.x, ant.y, queen.x, queen.y) < (TILE_SIZE * 1.2) ** 2;
-    let broodHere = state.brood.find(b => b.teamId === ant.team && !b.carriedBy && b.x === ant.gx && b.y === ant.gy);
+    let broodHere = state.brood.find(b => !b.carriedBy && b.x === ant.gx && b.y === ant.gy);
     let itemHere = state.surfaceItems.find(i => i.x === ant.gx && i.y === ant.gy);
     let larvaHere = state.brood.find(b => b.teamId === ant.team && !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === ant.gx && b.y === ant.gy);
     
@@ -1049,7 +1118,7 @@ function updateActionPrompt() {
     else if (ant.state === 'CARRYING_RESOURCE' && onQueen) msg = "Space: Feed the queen";
     else if (ant.state === 'CARRYING_RESOURCE') msg = "Space: Drop resource";
     else if (ant.state === 'CARRYING_BROOD') msg = "Space: Set down brood";
-    else if (broodHere) msg = "Space: Pick up brood";
+    else if (broodHere) msg = broodHere.teamId === ant.team ? "Space: Pick up brood" : "Space: Kidnap enemy brood!";
     else if (itemHere) msg = "Space: Pick up " + itemHere.type;
     
     if (msg) { el.textContent = msg; el.style.display = 'block'; } else el.style.display = 'none';
@@ -1065,6 +1134,12 @@ function update() {
         let camSpeed = 10 / camera.zoom;
         if (keys.w) camera.y -= camSpeed; if (keys.s) camera.y += camSpeed; if (keys.a) camera.x -= camSpeed; if (keys.d) camera.x += camSpeed;
     }
+
+    // Clamp camera to world bounds
+    let minCamX = WORLD_MIN_GX * TILE_SIZE;
+    let maxCamX = WORLD_MAX_GX * TILE_SIZE - canvas.width / camera.zoom;
+    if (camera.x < minCamX) camera.x = minCamX;
+    if (camera.x > maxCamX) camera.x = maxCamX;
 
     state.entities.forEach(ant => ant.update());
     state.entities = state.entities.filter(ant => {
@@ -1135,10 +1210,17 @@ function draw() {
     const gxMin = Math.floor(viewLeft / TILE_SIZE), gxMax = Math.ceil(viewRight / TILE_SIZE);
     const gyMin = Math.floor(viewTop / TILE_SIZE), gyMax = Math.ceil(viewBottom / TILE_SIZE);
 
-    let skyGrad = ctx.createLinearGradient(0, (SURFACE_Y - 15) * TILE_SIZE, 0, SURFACE_Y * TILE_SIZE);
+    // Draw Sky
+    let skyGrad = ctx.createLinearGradient(0, 0, 0, 45 * TILE_SIZE);
     skyGrad.addColorStop(0, '#7d9a52'); skyGrad.addColorStop(1, '#6a8641');
-    ctx.fillStyle = skyGrad; ctx.fillRect(gxMin * TILE_SIZE, gyMin * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, Math.max(0, SURFACE_Y * TILE_SIZE - gyMin * TILE_SIZE));
-    ctx.fillStyle = '#100d09'; ctx.fillRect(gxMin * TILE_SIZE, Math.max(gyMin, SURFACE_Y) * TILE_SIZE, (gxMax - gxMin + 1) * TILE_SIZE, (gyMax - gyMin + 1) * TILE_SIZE);
+    ctx.fillStyle = skyGrad; 
+    ctx.fillRect(WORLD_MIN_GX * TILE_SIZE, gyMin * TILE_SIZE, (WORLD_MAX_GX - WORLD_MIN_GX + 1) * TILE_SIZE, (gyMax - gyMin + 1) * TILE_SIZE);
+    
+    // Draw Void below bedrock
+    if (gyMax >= 50) {
+        ctx.fillStyle = '#0a0805';
+        ctx.fillRect(WORLD_MIN_GX * TILE_SIZE, 50 * TILE_SIZE, (WORLD_MAX_GX - WORLD_MIN_GX + 1) * TILE_SIZE, (gyMax - 50 + 1) * TILE_SIZE);
+    }
 
     for (let gy = gyMin; gy <= gyMax; gy++) {
         for (let gx = gxMin; gx <= gxMax; gx++) {
@@ -1179,7 +1261,7 @@ function draw() {
         if (b.carriedBy) return;
         let bx = b.x * TILE_SIZE + TILE_SIZE / 2, by = b.y * TILE_SIZE + TILE_SIZE / 2;
         if (!inView(bx, by)) return;
-        drawBroodShape(bx, by, b.stage);
+        drawBroodShape(bx, by, b.stage, b.teamId);
     });
 
     state.flies.forEach(f => { if (inView(f.x, f.y)) f.draw(); });
@@ -1193,18 +1275,24 @@ function resetGameState(){
     chunks.clear(); decorations.clear(); surfaceCache.clear();
     state = freshState();
     
-    // Spawn 4 rival colonies far apart
-    const startXs = [0, 3200, -3200, 6400];
+    // Spawn 4 rival colonies on the 4 distinct mountains
+    const startXs = [MOUND_CENTERS[0] * TILE_SIZE, MOUND_CENTERS[1] * TILE_SIZE, MOUND_CENTERS[2] * TILE_SIZE, MOUND_CENTERS[3] * TILE_SIZE];
     startXs.forEach((startX, idx) => {
         let gx = Math.floor(startX / TILE_SIZE);
-        for (let y = SURFACE_Y - 1; y < SURFACE_Y + 5; y++) setTile(gx, y, 0);
-        for (let cy = SURFACE_Y + 5; cy <= SURFACE_Y + 7; cy++) { for (let cx = gx - 3; cx <= gx + 3; cx++) setTile(cx, cy, 0); }
-        state.entities.push(new Ant('queen', startX, (SURFACE_Y + 6) * TILE_SIZE + 20, idx));
-        for (let i = 0; i < 8; i++) state.entities.push(new Ant('minor', startX, (SURFACE_Y + 6) * TILE_SIZE + 20, idx));
+        let surf = surfaceHeightAt(gx);
+        
+        // Clear a small chamber for the queen inside the mountain
+        for (let y = surf; y < surf + 6; y++) setTile(gx, y, 0);
+        for (let cy = surf + 6; cy <= surf + 8; cy++) { for (let cx = gx - 3; cx <= gx + 3; cx++) setTile(cx, cy, 0); }
+        
+        state.entities.push(new Ant('queen', startX, (surf + 7) * TILE_SIZE + 20, idx));
+        for (let i = 0; i < 8; i++) state.entities.push(new Ant('minor', startX, (surf + 7) * TILE_SIZE + 20, idx));
     });
     
-    camera.x = -canvas.width / 2; camera.y = ((SURFACE_Y + 5) * TILE_SIZE) - canvas.height / 2;
-    for (let i = 0; i < 15; i++) spawnPrey();
+    camera.x = startXs[0] - canvas.width / 2; 
+    camera.y = (surfaceHeightAt(MOUND_CENTERS[0]) + 5) * TILE_SIZE - canvas.height / 2;
+    
+    for (let i = 0; i < 25; i++) spawnPrey();
     setTool('pointer'); document.getElementById('context-menu').style.display = 'none'; updateUI();
 }
 
