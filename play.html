@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Ant Colony .io</title>
+<style>
+html,body{margin:0;height:100%;background:#1d1913;color:#f2e9d8;font-family:system-ui,sans-serif;overflow:hidden;touch-action:none}
+canvas{display:block}
+#menu{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(21,18,13,.93);z-index:5;text-align:center;padding:20px}
+#menu h1{font-size:44px;margin:0;color:#e0954f}
+#menu p{max-width:430px;color:#c9bfa9;line-height:1.5;margin:0}
+input,button{font:inherit;padding:12px 18px;border-radius:6px;border:1px solid #5a4a36;background:#2a231a;color:#f2e9d8}
+button{background:#c1793f;color:#1a1108;font-weight:700;cursor:pointer;border:0}
+#hud,#lb,#st{position:fixed;font-size:13px;background:rgba(21,18,13,.8);padding:8px 12px;border-radius:6px;pointer-events:none}
+#hud{top:10px;left:10px}#lb{top:10px;right:10px;min-width:150px}#st{bottom:10px;left:10px;color:#c9bfa9}
+#rc{position:fixed;bottom:10px;right:10px;display:none;touch-action:none}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud"></div><div id="lb"></div><div id="st"></div>
+<button id="rc">Recall</button>
+<div id="menu">
+  <h1>Ant Colony .io</h1>
+  <p>Move your mouse (or finger) to lead your swarm. Ants grab food and carry it home &mdash; every 2 food lays a brood. <b>Raid enemy nests to steal their brood:</b> stolen brood hatches as ants for <i>your</i> colony. Hold <b>Space</b> to recall your ants and defend.</p>
+  <p>Open the page in more tabs or send the link to friends to play together. Empty slots are filled with bot colonies.</p>
+  <input id="nm" maxlength="12" placeholder="Colony name">
+  <button id="go">Play</button>
+</div>
+<script>
+const W=2600,H=2600,MINC=4,MAXC=6,MAXANT=60,LOBBY='antio-lobby-v1';
+const COL=['#e0954f','#6f8fa8','#7a9a5a','#cf5b4f','#b58bd6','#e3d36b'];
+const BOT=['Red Fangs','Dune Crawlers','Moss Guild','Ember Swarm','Pale Legion','Sand Raiders'];
+const $=id=>document.getElementById(id);
+const cv=$('cv'),cx=cv.getContext('2d');
+const img={};['queen','nut'].forEach(n=>{const i=new Image();i.src=n+'.png';img[n]=i;});
+const rnd=(a,b)=>a+Math.random()*(b-a), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let view={cols:{},food:[],you:-1,h:1},tgt={x:W/2,y:H/2,r:0},cam={x:W/2,y:H/2},Z=1;
+let myName='Ant',peer=null,clientConn=null,sim=null,simTimer=null,net='',nextId=1;
+
+function resize(){cv.width=innerWidth;cv.height=innerHeight;Z=innerWidth<700?.7:1;}
+addEventListener('resize',resize);resize();
+
+/* ============ HOST: authoritative simulation ============ */
+function spawnFood(){sim.food.push({x:rnd(60,W-60),y:rnd(60,H-60)});}
+function addAnt(c){c.ants.push({x:c.x+rnd(-20,20),y:c.y+rnd(-20,20),hp:3,carry:0,ph:Math.random()*6.28,r:10+Math.random()*50});}
+function spawnCol(c){c.x=rnd(200,W-200);c.y=rnd(200,H-200);c.tx=c.x;c.ty=c.y;c.brood=[];c.food=0;c.ants=[];for(let i=0;i<6;i++)addAnt(c);}
+function newCol(name,bot){
+  const used=sim.cols.map(o=>o.k);
+  const k=[0,1,2,3,4,5].find(k=>!used.includes(k));
+  const c={id:nextId++,n:bot?BOT[k]:name,k,bot,ants:[],brood:[],food:0,stolen:0,tx:0,ty:0,raid:0,wait:0,recall:0,conn:null};
+  spawnCol(c);sim.cols.push(c);return c;
+}
+function fillBots(){while(sim.cols.length<MINC)newCol('',true);}
+
+function startHost(p){
+  clearInterval(simTimer);
+  sim={cols:[],food:[],tick:0};nextId=1;
+  for(let i=0;i<60;i++)spawnFood();
+  sim.me=newCol(myName,false);
+  fillBots();
+  p.on('connection',c=>{
+    c.on('data',d=>onClientMsg(c,d));
+    c.on('close',()=>{if(c.col&&sim){sim.cols=sim.cols.filter(x=>x!==c.col);fillBots();}});
+  });
+  simTimer=setInterval(step,33);
+  net='Hosting the lobby';
+}
+
+function onClientMsg(c,d){
+  if(!sim)return;
+  if(d.t==='join'&&!c.col){
+    const bots=sim.cols.filter(x=>x.bot);
+    if(sim.cols.length>=MAXC&&!bots.length){c.send({full:1});return;}
+    if(sim.cols.length>=MINC&&bots.length){
+      bots.sort((a,b)=>a.ants.length-b.ants.length);
+      sim.cols.splice(sim.cols.indexOf(bots[0]),1); // a human replaces the weakest bot
+    }
+    const col=newCol(String(d.n||'Ant').slice(0,12),false);
+    col.conn=c;c.col=col;
+  }else if(d.t==='tgt'&&c.col){
+    c.col.tx=clamp(+d.x||0,0,W);c.col.ty=clamp(+d.y||0,0,H);c.col.recall=d.r?1:0;
+  }
+}
+
+function deliver(c,a){
+  if(a.carry===1){c.food++;if(c.food>=2){c.food-=2;c.brood.push(300);}}
+  else{c.brood.push(240);c.stolen++;} // stolen brood hatches for the thief
+  a.carry=0;
+}
+
+function botThink(c,t){
+  const foes=sim.cols.filter(e=>e!==c);
+  const threat=foes.some(e=>e.ants.some(a=>Math.hypot(a.x-c.x,a.y-c.y)<260));
+  if(threat){c.tx=c.x;c.ty=c.y;c.raid=0;return;}
+  if(t<c.raid)return;
+  const rich=foes.filter(e=>e.brood.length&&e.ants.length<c.ants.length+8);
+  if(c.ants.length>=12&&rich.length&&Math.random()<.4){
+    const e=rich[Math.floor(Math.random()*rich.length)];
+    c.tx=e.x;c.ty=e.y;c.raid=t+300;return;
+  }
+  let best=null,bd=1e9;
+  for(const f of sim.food){const d=Math.hypot(f.x-c.x,f.y-c.y);if(d<bd){bd=d;best=f;}}
+  if(best){c.tx=best.x;c.ty=best.y;}
+}
+
+function step(){
+  const t=++sim.tick,cols=sim.cols;
+  if(sim.food.length<160&&Math.random()<.5)spawnFood();
+  for(const c of cols){
+    if(c.bot&&t%30===0)botThink(c,t);
+    for(let i=c.brood.length-1;i>=0;i--){
+      if(--c.brood[i]<=0&&c.ants.length<MAXANT){c.brood.splice(i,1);addAnt(c);}
+      else if(c.brood[i]<0)c.brood[i]=0;
+    }
+    for(const a of c.ants){
+      let gx,gy;
+      if(a.carry){gx=c.x;gy=c.y;}
+      else if(c.recall){gx=c.x+Math.cos(a.ph)*a.r*.6;gy=c.y+Math.sin(a.ph)*a.r*.6;}
+      else{gx=c.tx+Math.cos(a.ph)*a.r;gy=c.ty+Math.sin(a.ph)*a.r;}
+      const dx=gx-a.x,dy=gy-a.y,d=Math.hypot(dx,dy)||1,sp=Math.min(3.2,d);
+      a.x=clamp(a.x+dx/d*sp,0,W);a.y=clamp(a.y+dy/d*sp,0,H);
+      if(a.carry){if(Math.hypot(c.x-a.x,c.y-a.y)<30)deliver(c,a);continue;}
+      for(let i=0;i<sim.food.length;i++){
+        const f=sim.food[i];
+        if(Math.abs(f.x-a.x)<14&&Math.abs(f.y-a.y)<14){a.carry=1;sim.food.splice(i,1);break;}
+      }
+      if(a.carry)continue;
+      for(const e of cols){
+        if(e===c||!e.brood.length)continue;
+        if(Math.hypot(e.x-a.x,e.y-a.y)<48){e.brood.pop();a.carry=2;break;} // steal brood
+      }
+    }
+  }
+  const all=[];
+  for(const c of cols)for(const a of c.ants){a.c=c;all.push(a);}
+  for(let i=0;i<all.length;i++){
+    const a=all[i];
+    for(let j=i+1;j<all.length;j++){
+      const b=all[j];
+      if(a.c===b.c)continue;
+      if(Math.abs(a.x-b.x)<14&&Math.abs(a.y-b.y)<14){a.hp-=.1;b.hp-=.1;}
+    }
+  }
+  for(const c of cols){
+    c.ants=c.ants.filter(a=>{
+      if(a.hp>0)return true;
+      if(a.carry===1)sim.food.push({x:a.x,y:a.y});
+      return false;
+    });
+    if(!c.ants.length&&!c.brood.length){
+      if(!c.wait)c.wait=60;else if(--c.wait===0)spawnCol(c); // wiped out: respawn after ~2s
+    }
+  }
+  if(t%3===0){
+    const s={h:cols.filter(c=>!c.bot).length,
+      c:cols.map(c=>({i:c.id,n:c.n,k:c.k,x:c.x|0,y:c.y|0,f:c.food,b:c.brood.length,s:c.stolen,bot:c.bot?1:0,
+        a:c.ants.flatMap(a=>[a.x|0,a.y|0,a.carry])})),
+      fd:sim.food.flatMap(f=>[f.x|0,f.y|0])};
+    onSnap(s,sim.me.id);
+    for(const c of cols)if(c.conn&&c.conn.open)c.conn.send({...s,you:c.id});
+  }
+}
+
+/* ============ CLIENT / NETWORKING ============ */
+function connect(){
+  clearInterval(simTimer);sim=null;clientConn=null;
+  view={cols:{},food:[],you:-1,h:1};
+  if(peer){try{peer.destroy();}catch(e){}peer=null;}
+  const p=new Peer(LOBBY);peer=p;
+  net='Looking for a lobby...';
+  p.on('open',()=>startHost(p));            // lobby id was free: we are the host
+  p.on('error',e=>{
+    if(e.type==='unavailable-id'){p.destroy();joinClient();} // lobby exists: join it
+    else{net='Network error ('+e.type+') - retrying';setTimeout(connect,3000);}
+  });
+}
+function joinClient(){
+  const p=new Peer();peer=p;
+  p.on('error',()=>setTimeout(connect,1500));
+  p.on('open',()=>{
+    const c=p.connect(LOBBY,{reliable:true});clientConn=c;
+    const to=setTimeout(()=>{if(!c.open){p.destroy();connect();}},6000);
+    c.on('open',()=>{clearTimeout(to);net='Joined a lobby';c.send({t:'join',n:myName});});
+    c.on('data',d=>{
+      if(d.full){net='Lobby full - retrying';c.close();setTimeout(connect,4000);return;}
+      onSnap(d,d.you);
+    });
+    c.on('close',()=>{clientConn=null;net='Host left - reconnecting';setTimeout(connect,800);});
+  });
+}
+
+function onSnap(s,you){
+  view.you=you;view.h=s.h;view.food=s.fd;
+  const seen={};
+  for(const c of s.c){
+    seen[c.i]=1;
+    const v=view.cols[c.i]||(view.cols[c.i]={ants:[]});
+    Object.assign(v,{i:c.i,n:c.n,k:c.k,x:c.x,y:c.y,f:c.f,b:c.b,s:c.s,bot:c.bot});
+    const n=c.a.length/3;
+    for(let q=0;q<n;q++){
+      const o=q*3,a=v.ants[q]||(v.ants[q]={x:c.a[o],y:c.a[o+1]});
+      a.tx=c.a[o];a.ty=c.a[o+1];a.c=c.a[o+2];
+    }
+    v.ants.length=n;
+  }
+  for(const k in view.cols)if(!seen[k])delete view.cols[k];
+  updateUI();
+}
+
+/* ============ INPUT ============ */
+function setT(e){tgt.x=(e.clientX-cv.width/2)/Z+cam.x;tgt.y=(e.clientY-cv.height/2)/Z+cam.y;}
+cv.addEventListener('pointermove',setT);cv.addEventListener('pointerdown',setT);
+addEventListener('keydown',e=>{if(e.code==='Space'){tgt.r=1;e.preventDefault();}});
+addEventListener('keyup',e=>{if(e.code==='Space')tgt.r=0;});
+const rc=$('rc');rc.onpointerdown=()=>tgt.r=1;rc.onpointerup=rc.onpointerleave=()=>tgt.r=0;
+if(matchMedia('(pointer:coarse)').matches)rc.style.display='block';
+setInterval(()=>{
+  if(sim&&sim.me){sim.me.tx=tgt.x;sim.me.ty=tgt.y;sim.me.recall=tgt.r;}
+  else if(clientConn&&clientConn.open)clientConn.send({t:'tgt',x:tgt.x|0,y:tgt.y|0,r:tgt.r});
+},66);
+
+/* ============ UI + RENDER ============ */
+function updateUI(){
+  const m=view.cols[view.you],list=Object.values(view.cols).sort((a,b)=>b.ants.length-a.ants.length);
+  if(m)$('hud').textContent=`Ants ${m.ants.length} · Brood ${m.b} · Food ${m.f}/2 · Stolen ${m.s}`;
+  const lb=$('lb');lb.textContent='';
+  list.slice(0,6).forEach(v=>{
+    const d=document.createElement('div');
+    d.textContent=`${v.n}${v.bot?' (bot)':''}  ${v.ants.length}`;
+    d.style.color=COL[v.k];if(v.i===view.you)d.style.fontWeight='700';
+    lb.appendChild(d);
+  });
+  $('st').textContent=`${net} · ${view.h} player${view.h===1?'':'s'}, ${list.length-view.h} bot${list.length-view.h===1?'':'s'}`;
+}
+
+function draw(){
+  requestAnimationFrame(draw);
+  const m=view.cols[view.you];
+  if(m){
+    let sx=m.x,sy=m.y;
+    if(m.ants.length){sx=sy=0;for(const a of m.ants){sx+=a.x;sy+=a.y;}sx/=m.ants.length;sy/=m.ants.length;}
+    cam.x+=(sx-cam.x)*.08;cam.y+=(sy-cam.y)*.08;
+  }
+  cx.fillStyle='#15120d';cx.fillRect(0,0,cv.width,cv.height);
+  cx.save();cx.translate(cv.width/2,cv.height/2);cx.scale(Z,Z);cx.translate(-cam.x,-cam.y);
+  cx.fillStyle='#4a3826';cx.fillRect(0,0,W,H);
+  cx.strokeStyle='rgba(0,0,0,.14)';cx.lineWidth=1;cx.beginPath();
+  for(let x=0;x<=W;x+=100){cx.moveTo(x,0);cx.lineTo(x,H);}
+  for(let y=0;y<=H;y+=100){cx.moveTo(0,y);cx.lineTo(W,y);}
+  cx.stroke();
+  for(let i=0;i<view.food.length;i+=2){
+    const x=view.food[i],y=view.food[i+1];
+    if(img.nut.complete&&img.nut.naturalWidth)cx.drawImage(img.nut,x-9,y-9,18,18);
+    else{cx.fillStyle='#e0954f';cx.beginPath();cx.arc(x,y,6,0,6.28);cx.fill();}
+  }
+  for(const k in view.cols){
+    const v=view.cols[k],col=COL[v.k];
+    cx.fillStyle=col;cx.globalAlpha=.3;cx.beginPath();cx.arc(v.x,v.y,36,0,6.28);cx.fill();cx.globalAlpha=1;
+    cx.strokeStyle=col;cx.lineWidth=3;cx.stroke();
+    if(img.queen.complete&&img.queen.naturalWidth)cx.drawImage(img.queen,v.x-20,v.y-20,40,40);
+    for(let i=0;i<Math.min(v.b,24);i++){
+      const an=i/Math.min(v.b,24)*6.28;
+      cx.fillStyle='#e8ecec';cx.beginPath();cx.ellipse(v.x+Math.cos(an)*28,v.y+Math.sin(an)*28,3,4.5,an,0,6.28);cx.fill();
+    }
+    for(const a of v.ants){
+      a.x+=(a.tx-a.x)*.35;a.y+=(a.ty-a.y)*.35;
+      cx.fillStyle=col;cx.beginPath();cx.arc(a.x,a.y,5,0,6.28);cx.fill();
+      cx.fillStyle='#15120d';cx.beginPath();cx.arc(a.x,a.y,2,0,6.28);cx.fill();
+      if(a.c){cx.fillStyle=a.c===1?'#e0954f':'#e8ecec';cx.beginPath();cx.arc(a.x,a.y-7,3.5,0,6.28);cx.fill();}
+    }
+    cx.fillStyle='#f2e9d8';cx.font='600 13px system-ui';cx.textAlign='center';
+    cx.fillText(v.n+(k==view.you?' (you)':''),v.x,v.y-46);
+  }
+  cx.restore();
+}
+requestAnimationFrame(draw);
+
+$('go').onclick=()=>{myName=($('nm').value.trim()||'Ant').slice(0,12);$('menu').style.display='none';connect();};
+</script>
+</body>
+</html>
