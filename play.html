@@ -14,7 +14,7 @@
     --clay:#c1793f; --clay-bright:#e0954f;
     --moss:#7a9a5a; --moss-dim:#5c7644;
     --brick:#a8453c; --brick-bright:#cf5b4f;
-    --dust-blue:#6f8fa8;
+    --dust-blue:#6f8fa8; --acid-green:#8bc34a;
     --line:rgba(242,233,216,0.14); --line-strong:rgba(242,233,216,0.28);
     --shadow-deep:0 18px 50px rgba(0,0,0,0.55);
     --font-display:'Fraunces',Georgia,serif;
@@ -89,14 +89,22 @@
   .menu-action-btn{ background:var(--soil-700); border:1px solid var(--line-strong); color:var(--parchment); font-size:12.5px; padding:9px 12px; border-radius:3px; cursor:pointer; font-weight:500; transition:background 0.15s, border-color 0.15s; }
   .menu-action-btn:hover{ background:var(--soil-600); border-color:var(--clay); }
 
-  #controls-hint{ position:absolute; bottom:88px; left:20px; color:var(--parchment-dim); font-size:12.5px; pointer-events:none; background:rgba(21,18,13,0.85); padding:10px 14px; border-radius:3px; border:1px solid var(--line); max-width:320px; line-height:1.6; z-index:5; }
+  #controls-hint{ position:absolute; bottom:140px; left:20px; color:var(--parchment-dim); font-size:12.5px; pointer-events:none; background:rgba(21,18,13,0.85); padding:10px 14px; border-radius:3px; border:1px solid var(--line); max-width:320px; line-height:1.6; z-index:5; }
   .highlight{ color:var(--clay-bright); font-weight:600; }
   kbd.mini{ background:var(--soil-600); border:1px solid var(--line-strong); border-radius:2px; padding:1px 5px; font-size:11px; color:var(--parchment); }
 
-  #action-prompt{ position:absolute; left:50%; bottom:126px; transform:translateX(-50%); background:rgba(21,18,13,0.92); border:1px solid var(--clay); color:var(--clay-bright); padding:8px 18px; border-radius:20px; font-size:13.5px; font-weight:600; display:none; pointer-events:none; white-space:nowrap; z-index:5; }
+  #action-prompt{ position:absolute; left:50%; bottom:140px; transform:translateX(-50%); background:rgba(21,18,13,0.92); border:1px solid var(--clay); color:var(--clay-bright); padding:8px 18px; border-radius:20px; font-size:13.5px; font-weight:600; display:none; pointer-events:none; white-space:nowrap; z-index:5; }
 
-  #bottom-hud{ display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; padding:14px 20px; border-top:1px solid var(--line-strong); }
-  .tools-group, .spawn-group{ display:flex; gap:8px; flex-wrap:wrap; }
+  #bottom-hud{ display:flex; flex-direction:column; gap:10px; padding:14px 20px; border-top:1px solid var(--line-strong); }
+  .hud-row{ display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px; }
+  .tools-group, .spawn-group, .orders-group{ display:flex; gap:8px; flex-wrap:wrap; }
+  
+  .orders-group{ background:rgba(0,0,0,0.3); padding:6px; border-radius:4px; border:1px solid var(--line); align-items:center; }
+  .orders-label{ font-size:11px; color:var(--parchment-dim); text-transform:uppercase; letter-spacing:0.05em; margin-right:4px; font-weight:600; }
+  .order-btn{ background:var(--soil-800); color:var(--parchment-dim); border:1px solid var(--line-strong); padding:6px 12px; cursor:pointer; font-weight:600; border-radius:3px; font-size:12px; transition:all 0.15s; }
+  .order-btn:hover{ background:var(--soil-700); color:var(--parchment); }
+  .order-btn.active{ background:var(--clay); color:#1a1108; border-color:var(--clay-bright); }
+
   .tool-btn, .spawn-btn{ background:var(--soil-700); color:var(--parchment); border:1px solid var(--line-strong); padding:10px 14px; cursor:pointer; font-weight:600; border-radius:3px; transition:all 0.15s; font-size:12.5px; display:flex; align-items:center; gap:7px; }
   .tool-btn svg, .spawn-btn svg{ width:15px; height:15px; flex-shrink:0; }
   .tool-btn:hover, .spawn-btn:hover{ background:var(--soil-600); transform:translateY(-1px); }
@@ -105,6 +113,8 @@
   .btn-cost{ display:block; font-size:10.5px; color:var(--parchment-dim); margin-top:3px; font-weight:400; }
   .spawn-btn{ flex-direction:column; align-items:flex-start; gap:2px; }
   .spawn-btn .btn-label-row{ display:flex; align-items:center; gap:7px; }
+  
+  .spawn-acid .btn-label-row svg{ color:var(--acid-green); }
 </style>
 </head>
 <body>
@@ -123,7 +133,7 @@
         <span class="sub">Multiplayer-Style Arena</span>
       </h1>
       <hr class="title-rule">
-      <p class="lede">Compete against rival AI colonies across four distinct dirt mountains. Grow your population, harvest resources, and kidnap enemy brood to convert them to your side!</p>
+      <p class="lede">Compete against rival AI colonies across four distinct dirt mountains. Grow your population, harvest resources, command your swarm, and kidnap enemy brood to convert them to your side!</p>
       <div class="menu-stack">
         <button class="menu-btn primary" id="btn-launch">
           <span>Enter Arena</span>
@@ -188,30 +198,43 @@
     </div>
 
     <div id="bottom-hud" class="hud-panel">
-      <div class="tools-group">
-        <button class="tool-btn active" id="tool-pointer" data-tool="pointer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 8-6 2-2 6z"/></svg> Pointer
-        </button>
-        <button class="tool-btn tool-forage" id="tool-forage" data-tool="forage">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21c-4-3-7-6.5-7-10.5A7 7 0 0 1 12 3a7 7 0 0 1 7 7.5C19 14.5 16 18 12 21z"/></svg> Forage Pheromone
-        </button>
-        <button class="tool-btn tool-attack" id="tool-attack" data-tool="attack">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M9 6h9v9"/></svg> Attack Pheromone
-        </button>
+      <div class="orders-group">
+        <span class="orders-label">Colony Orders:</span>
+        <button class="order-btn active" data-order="auto">Forage</button>
+        <button class="order-btn" data-order="defend">Defend</button>
+        <button class="order-btn" data-order="attack">Attack</button>
+        <button class="order-btn" data-order="follow">Follow</button>
       </div>
-      <div class="spawn-group">
-        <button class="spawn-btn" id="spawn-minor">
-          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="5" ry="7"/></svg>Spawn Minor</span>
-          <span class="btn-cost">2 Seeds</span>
-        </button>
-        <button class="spawn-btn" id="spawn-major">
-          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="6" ry="8"/></svg>Spawn Major</span>
-          <span class="btn-cost">3 Seeds, 1 Meat</span>
-        </button>
-        <button class="spawn-btn" id="spawn-super">
-          <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="7" ry="9"/></svg>Spawn Super Major</span>
-          <span class="btn-cost">4 Seeds, 2 Meat</span>
-        </button>
+      <div class="hud-row">
+        <div class="tools-group">
+          <button class="tool-btn active" id="tool-pointer" data-tool="pointer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 8-6 2-2 6z"/></svg> Pointer
+          </button>
+          <button class="tool-btn tool-forage" id="tool-forage" data-tool="forage">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21c-4-3-7-6.5-7-10.5A7 7 0 0 1 12 3a7 7 0 0 1 7 7.5C19 14.5 16 18 12 21z"/></svg> Forage Pheromone
+          </button>
+          <button class="tool-btn tool-attack" id="tool-attack" data-tool="attack">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M9 6h9v9"/></svg> Attack Pheromone
+          </button>
+        </div>
+        <div class="spawn-group">
+          <button class="spawn-btn" id="spawn-minor">
+            <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="5" ry="7"/></svg>Spawn Minor</span>
+            <span class="btn-cost">2 Seeds</span>
+          </button>
+          <button class="spawn-btn" id="spawn-major">
+            <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="6" ry="8"/></svg>Spawn Major</span>
+            <span class="btn-cost">3 Seeds, 1 Meat</span>
+          </button>
+          <button class="spawn-btn" id="spawn-super">
+            <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="7" ry="9"/></svg>Spawn Super Major</span>
+            <span class="btn-cost">4 Seeds, 2 Meat</span>
+          </button>
+          <button class="spawn-btn spawn-acid" id="spawn-acid">
+            <span class="btn-label-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="6"/><path d="M12 2 L12 6 M12 18 L12 22 M2 12 L6 12 M18 12 L22 12"/></svg>Spawn Acid Ant</span>
+            <span class="btn-cost">5 Seeds, 1 Meat</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -226,6 +249,7 @@ const ASSETS = {
     minor: { src: 'https://gnome-steader.github.io/Ant-game/minor.png', img: new Image(), loaded: false, fallback: '#d9a441' },
     major: { src: 'https://gnome-steader.github.io/Ant-game/major.png', img: new Image(), loaded: false, fallback: '#c1793f' },
     super_major: { src: 'https://gnome-steader.github.io/Ant-game/super-major.png', img: new Image(), loaded: false, fallback: '#a8453c' },
+    acid: { src: '', img: new Image(), loaded: false, fallback: '#8bc34a' }, // New Acid Ant
     army_ant: { src: 'https://gnome-steader.github.io/Ant-game/army_ant.png', img: new Image(), loaded: false, fallback: '#8b2a2a' },
     dirt_tile: { src: 'https://gnome-steader.github.io/Ant-game/dirt_tile.png', img: new Image(), loaded: false, fallback: '#4a3826' },
     dirt_ball: { src: 'https://gnome-steader.github.io/Ant-game/dirt_ball.png', img: new Image(), loaded: false, fallback: '#6b4a2b' },
@@ -234,9 +258,11 @@ const ASSETS = {
     bug: { src: 'https://gnome-steader.github.io/Ant-game/bug.png', img: new Image(), loaded: false, fallback: null }
 };
 Object.values(ASSETS).forEach(asset => {
-    asset.img.src = asset.src;
-    asset.img.onload = () => asset.loaded = true;
-    asset.img.onerror = () => asset.loaded = false;
+    if(asset.src) {
+        asset.img.src = asset.src;
+        asset.img.onload = () => asset.loaded = true;
+        asset.img.onerror = () => asset.loaded = false;
+    }
 });
 
 const SCREENS = ['start-screen','game-over-screen'];
@@ -315,12 +341,10 @@ function surfaceHeightAt(gx) {
     for (let c of MOUND_CENTERS) {
         let dist = Math.abs(gx - c);
         if (dist < 35) {
-            // Cosine interpolation for smooth hill
             let h = 15 + (45 - 15) * (1 - Math.cos((dist / 35) * (Math.PI / 2)));
             y = Math.min(y, h);
         }
     }
-    // Add slight noise
     y += Math.sin(gx * 0.2) * 1.5;
     let val = Math.floor(y);
     surfaceCache.set(gx, val);
@@ -335,15 +359,15 @@ function generateChunk(cx, cy) {
         for (let lx = 0; lx < CHUNK_SIZE; lx++) {
             const gx = baseX + lx, gy = baseY + ly;
             if (gx < WORLD_MIN_GX || gx > WORLD_MAX_GX) {
-                data[ly * CHUNK_SIZE + lx] = 0; // Empty outside world
+                data[ly * CHUNK_SIZE + lx] = 0;
                 continue;
             }
             const surf = surfaceHeightAt(gx);
             let val = 0;
-            if (gy >= 48) val = 2; // Indestructible bedrock floor
+            if (gy >= 48) val = 2; // Bedrock
             else if (gy >= surf) {
                 val = 1; // Dirt
-                if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2; // Random rocks
+                if (hash2(gx * 3.1, gy * 7.7) > 0.985) val = 2; // Rocks
                 if (gy > surf + 4 && hash2(gx * 0.09 + 50, gy * 0.09 + 50) > 0.965) val = 0; // Caves
             }
             data[ly * CHUNK_SIZE + lx] = val;
@@ -353,13 +377,26 @@ function generateChunk(cx, cy) {
         const gx = baseX + lx; 
         if (gx < WORLD_MIN_GX || gx > WORLD_MAX_GX) continue;
         const surf = surfaceHeightAt(gx);
+        
+        // Surface decorations
         if (surf >= baseY && surf < baseY + CHUNK_SIZE) {
             const r = hash2(gx * 5.3, 91.1);
-            if (r > 0.82) decos.push({ type: 'grass', x: gx, y: surf - 1 });
-            else if (r > 0.74) decos.push({ type: 'pebble', x: gx, y: surf - 1 });
+            if (r > 0.85) decos.push({ type: 'grass', x: gx, y: surf - 1 });
+            else if (r > 0.78) decos.push({ type: 'pebble', x: gx, y: surf - 1 });
+            else if (r > 0.74) decos.push({ type: 'flower', x: gx, y: surf - 1 });
+            
             if (hash2(gx * 4.1, 88.8) > 0.95) {
                 state.surfaceItems.push({ type: 'seed', x: gx, y: surf - 1 });
                 state.jobs.push({ type: 'HARVEST', x: gx, y: surf - 1, resourceType: 'seed', assigned: false });
+            }
+        }
+        
+        // Underground decorations
+        for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+            const gy = baseY + ly;
+            if (gy > surf + 2 && data[ly * CHUNK_SIZE + lx] === 1) {
+                if (hash2(gx * 1.1, gy * 2.2) > 0.98) decos.push({ type: 'root', x: gx, y: gy });
+                if (hash2(gx * 3.3, gy * 4.4) > 0.99) decos.push({ type: 'bone', x: gx, y: gy });
             }
         }
     }
@@ -398,20 +435,48 @@ let state = null;
 function freshState(){
     return {
         teams: [
-            { id: 0, name: 'Blue (You)', color: '#6f8fa8', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: true },
-            { id: 1, name: 'Red Team', color: '#cf5b4f', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false },
-            { id: 2, name: 'Green Team', color: '#7a9a5a', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false },
-            { id: 3, name: 'Orange Team', color: '#e0954f', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false }
+            { id: 0, name: 'Blue (You)', color: '#6f8fa8', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: true, order: 'auto' },
+            { id: 1, name: 'Red Team', color: '#cf5b4f', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false, order: 'auto' },
+            { id: 2, name: 'Green Team', color: '#7a9a5a', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false, order: 'auto' },
+            { id: 3, name: 'Orange Team', color: '#e0954f', resources: { seeds: 15, meat: 5 }, queenHunger: 100, isPlayer: false, order: 'auto' }
         ],
-        entities: [], jobs: [], surfaceItems: [], pheromones: [], particles: [], floatingTexts: [], splats: [], flies: [], brood: [],
+        entities: [], jobs: [], surfaceItems: [], pheromones: [], particles: [], floatingTexts: [], splats: [], flies: [], brood: [], projectiles: [],
         controlledAnt: null, activeTool: 'pointer', isDrawing: false, shake: 0, time: 0, seedRespawnTimer: 900, gameOver: false
     };
 }
 
 const STATS = {
-    queen: { hp: 200, dmg: 0, speed: 1.1 }, minor: { hp: 15, dmg: 2, speed: 3.3 },
-    major: { hp: 40, dmg: 8, speed: 2.4 }, super_major: { hp: 80, dmg: 15, speed: 1.8 }
+    queen: { hp: 200, dmg: 0, speed: 1.1 }, 
+    minor: { hp: 15, dmg: 2, speed: 3.3 },
+    major: { hp: 40, dmg: 8, speed: 2.4 }, 
+    super_major: { hp: 80, dmg: 15, speed: 1.8 },
+    acid: { hp: 25, dmg: 12, speed: 2.2 } // New Acid Ant
 };
+
+class Projectile {
+    constructor(x, y, target, dmg, team) {
+        this.x = x; this.y = y; this.dmg = dmg; this.team = team;
+        let angle = Math.atan2(target.y - y, target.x - x);
+        let speed = 6;
+        this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+        this.life = 60;
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy; this.life--;
+        let hit = state.entities.find(e => e.team !== this.team && distSq(e.x, e.y, this.x, this.y) < 400);
+        if (hit) {
+            hit.hp -= this.dmg; hit.flash = 10; hit.underAttack = 300;
+            spawnParticles(this.x, this.y, '#8bc34a', 8, 3);
+            this.life = 0;
+        }
+    }
+    draw() {
+        ctx.fillStyle = '#8bc34a';
+        ctx.beginPath(); ctx.arc(this.x, this.y, 5, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#c5e1a5';
+        ctx.beginPath(); ctx.arc(this.x - this.vx*0.5, this.y - this.vy*0.5, 3, 0, Math.PI*2); ctx.fill();
+    }
+}
 
 class Particle {
     constructor(x, y, color, speed = 4, size = null, gravity = 0) {
@@ -622,17 +687,32 @@ class Ant {
         if (this.type === 'queen') { this.updateQueenAI(); resolveCollision(this); return; }
 
         if (this.attackTimer > 0) this.attackTimer--;
-        let target = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2) ** 2);
-        if (target) {
-            if (this.state !== 'IDLE') { if (this.job) { this.job.assigned = false; this.job = null; } this.huntTargetId = null; this.state = 'IDLE'; }
-            this.path = []; this.angle = Math.atan2(target.y - this.y, target.x - this.x);
-            if (this.attackTimer <= 0) {
-                target.hp -= this.dmg; target.flash = 10; target.underAttack = 300; this.attackTimer = 30;
-                spawnParticles(target.x, target.y, '#a8453c', 6, 6); triggerShake(2);
-                const lungeX = this.x + Math.cos(this.angle) * 8, lungeY = this.y + Math.sin(this.angle) * 8;
-                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+        
+        // Combat Logic
+        if (this.type === 'acid') {
+            let target = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 4) ** 2);
+            if (target) {
+                if (this.state !== 'IDLE') { if (this.job) { this.job.assigned = false; this.job = null; } this.huntTargetId = null; this.state = 'IDLE'; }
+                this.path = []; this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+                if (this.attackTimer <= 0) {
+                    state.projectiles.push(new Projectile(this.x, this.y, target, this.dmg, this.team));
+                    this.attackTimer = 45;
+                }
+                resolveCollision(this); return;
             }
-            resolveCollision(this); return;
+        } else {
+            let target = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.2) ** 2);
+            if (target) {
+                if (this.state !== 'IDLE') { if (this.job) { this.job.assigned = false; this.job = null; } this.huntTargetId = null; this.state = 'IDLE'; }
+                this.path = []; this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+                if (this.attackTimer <= 0) {
+                    target.hp -= this.dmg; target.flash = 10; target.underAttack = 300; this.attackTimer = 30;
+                    spawnParticles(target.x, target.y, '#a8453c', 6, 6); triggerShake(2);
+                    const lungeX = this.x + Math.cos(this.angle) * 8, lungeY = this.y + Math.sin(this.angle) * 8;
+                    if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+                }
+                resolveCollision(this); return;
+            }
         }
 
         if (this.path.length > 0) {
@@ -672,12 +752,25 @@ class Ant {
 
     performManualAction() {
         if (this.type === 'queen') return;
-        let enemy = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.5) ** 2);
-        if (enemy) {
-            enemy.hp -= this.dmg; enemy.flash = 10; enemy.underAttack = 300; spawnParticles(enemy.x, enemy.y, '#a8453c', 8, 6); triggerShake(3);
-            const lungeX = this.x + Math.cos(this.angle) * 10, lungeY = this.y + Math.sin(this.angle) * 10;
-            if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
-            return;
+        
+        if (this.type === 'acid') {
+            let enemy = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 4) ** 2);
+            if (enemy) {
+                this.angle = Math.atan2(enemy.y - this.y, enemy.x - this.x);
+                if (this.attackTimer <= 0) {
+                    state.projectiles.push(new Projectile(this.x, this.y, enemy, this.dmg, this.team));
+                    this.attackTimer = 45;
+                }
+                return;
+            }
+        } else {
+            let enemy = state.entities.find(e => e.team !== this.team && e.hp > 0 && distSq(e.x, e.y, this.x, this.y) < (TILE_SIZE * 1.5) ** 2);
+            if (enemy) {
+                enemy.hp -= this.dmg; enemy.flash = 10; enemy.underAttack = 300; spawnParticles(enemy.x, enemy.y, '#a8453c', 8, 6); triggerShake(3);
+                const lungeX = this.x + Math.cos(this.angle) * 10, lungeY = this.y + Math.sin(this.angle) * 10;
+                if (!lineCrossesWall(this.x, this.y, lungeX, lungeY)) { this.x = lungeX; this.y = lungeY; }
+                return;
+            }
         }
 
         let myTeam = state.teams[this.team];
@@ -755,6 +848,7 @@ class Ant {
         if (this.type === 'queen') return;
         let myTeam = state.teams[this.team];
         let myQueen = state.entities.find(e => e.type === 'queen' && e.team === this.team);
+        let order = myTeam.order || 'auto';
 
         let distressAnt = state.entities.find(e => e.team === this.team && e.underAttack > 0 && e !== this);
         if (distressAnt && distSq(this.x, this.y, distressAnt.x, distressAnt.y) < (TILE_SIZE * 15) ** 2) {
@@ -763,7 +857,43 @@ class Ant {
             this.alertTimer = 60; return;
         }
 
-        if (this.state === 'IDLE' && (this.type === 'minor' || this.type === 'major') && this.pathTimer <= 0) {
+        // COLONY ORDERS LOGIC
+        if (order === 'follow') {
+            let target = (this.team === 0 && state.controlledAnt) ? state.controlledAnt : myQueen;
+            if (target && distSq(this.x, this.y, target.x, target.y) > (TILE_SIZE * 4)**2) {
+                if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, target.gx, target.gy) || []; this.pathTimer = 30;
+                }
+                return;
+            }
+        } else if (order === 'defend') {
+            if (myQueen && distSq(this.x, this.y, myQueen.x, myQueen.y) > (TILE_SIZE * 8)**2) {
+                if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, myQueen.gx, myQueen.gy) || []; this.pathTimer = 30;
+                }
+                return;
+            }
+        } else if (order === 'attack') {
+            let targetTeamId = myTeam.targetTeam !== undefined ? myTeam.targetTeam : -1;
+            let enemyQueens = state.entities.filter(e => e.type === 'queen' && e.team !== this.team && (targetTeamId === -1 || e.team === targetTeamId));
+            let targetQ = enemyQueens[0];
+            
+            // Kidnap brood priority
+            let enemyBrood = state.brood.find(b => b.teamId !== this.team && !b.carriedBy && distSq(b.x * TILE_SIZE, b.y * TILE_SIZE, this.x, this.y) < (TILE_SIZE * 20) ** 2);
+            if (enemyBrood) {
+                this.targetBroodId = enemyBrood.id; this.state = 'FETCHING_BROOD';
+                if (pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, enemyBrood.x, enemyBrood.y) || []; this.pathTimer = 20; }
+                return;
+            }
+
+            if (targetQ && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
+                pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, targetQ.gx, targetQ.gy) || []; this.pathTimer = 40;
+                return;
+            }
+        }
+
+        // Normal Forage / Auto Logic
+        if (this.state === 'IDLE' && (this.type === 'minor' || this.type === 'major' || this.type === 'acid') && this.pathTimer <= 0) {
             let attackPh = findNearestPheromone('attack', this.x, this.y, 22, this.team);
             if (attackPh && pathfindsThisFrame < 2) {
                 let openSpot = nearestOpenTile(Math.floor(attackPh.x / TILE_SIZE), Math.floor(attackPh.y / TILE_SIZE));
@@ -772,16 +902,6 @@ class Ant {
         }
 
         if (this.state === 'IDLE') {
-            // 1. Look for enemy brood to kidnap!
-            if (!this.job && (this.type === 'minor' || this.type === 'major')) {
-                let enemyBrood = state.brood.find(b => b.teamId !== this.team && !b.carriedBy && distSq(b.x * TILE_SIZE, b.y * TILE_SIZE, this.x, this.y) < (TILE_SIZE * 12) ** 2);
-                if (enemyBrood) {
-                    this.targetBroodId = enemyBrood.id; this.state = 'FETCHING_BROOD';
-                    if (pathfindsThisFrame < 2) { pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, enemyBrood.x, enemyBrood.y) || []; this.pathTimer = 20; }
-                    return;
-                }
-            }
-
             if (!this.job && (this.type === 'minor' || this.type === 'major')) {
                 if (myQueen) {
                     let misplacedBrood = state.brood.find(b => b.teamId === this.team && !b.carriedBy && b.y < myQueen.gy - 2);
@@ -797,7 +917,7 @@ class Ant {
 
             let nestWellStocked = myTeam.resources.seeds >= 20 && myTeam.resources.meat >= 12 && myTeam.queenHunger > 60;
 
-            if (!this.job && (this.type === 'minor' || this.type === 'major') && state.flies.length > 0) {
+            if (!this.job && (this.type === 'minor' || this.type === 'major' || this.type === 'acid') && state.flies.length > 0) {
                 let foragePh = findNearestPheromone('forage', this.x, this.y, 26, this.team);
                 if (Math.random() < (foragePh ? 0.35 : 0.10)) {
                     let prey = state.flies.find(f => distSq(f.x, f.y, foragePh ? foragePh.x : this.x, foragePh ? foragePh.y : this.y) < (TILE_SIZE * 16) ** 2);
@@ -837,9 +957,17 @@ class Ant {
             let prey = state.flies.find(f => f.id === this.huntTargetId);
             if (!prey) { this.state = 'IDLE'; this.huntTargetId = null; return; }
             let dist = distSq(prey.x, prey.y, this.x, this.y);
-            if (dist < (TILE_SIZE * 1.6) ** 2) {
+            let attackRange = this.type === 'acid' ? 4 : 1.6;
+            if (dist < (TILE_SIZE * attackRange) ** 2) {
                 if (this.attackTimer > 0) this.attackTimer--;
-                if (this.attackTimer <= 0) { prey.hp -= this.dmg * 1.5; prey.flash = 8; this.attackTimer = 18; spawnParticles(prey.x, prey.y, '#8a5a3a', 4, 4); }
+                if (this.attackTimer <= 0) { 
+                    if (this.type === 'acid') {
+                        state.projectiles.push(new Projectile(this.x, this.y, prey, this.dmg, this.team));
+                        this.attackTimer = 45;
+                    } else {
+                        prey.hp -= this.dmg * 1.5; prey.flash = 8; this.attackTimer = 18; spawnParticles(prey.x, prey.y, '#8a5a3a', 4, 4); 
+                    }
+                }
                 this.angle = Math.atan2(prey.y - this.y, prey.x - this.x);
                 if (prey.hp <= 0) {
                     state.flies = state.flies.filter(f => f !== prey); spawnParticles(prey.x, prey.y, '#4a3728', 14, 6, null, 0.1);
@@ -847,7 +975,7 @@ class Ant {
                     state.surfaceItems.push({ type: 'meat', x: gx, y: gy }); state.jobs.push({ type: 'HARVEST', x: gx, y: gy, resourceType: 'meat', assigned: false });
                     this.state = 'IDLE'; this.huntTargetId = null;
                 }
-                if (dist > (TILE_SIZE * 0.6) ** 2) { let a = Math.atan2(prey.y - this.y, prey.x - this.x); this.x += Math.cos(a) * this.speed * 0.6; this.y += Math.sin(a) * this.speed * 0.6; }
+                if (this.type !== 'acid' && dist > (TILE_SIZE * 0.6) ** 2) { let a = Math.atan2(prey.y - this.y, prey.x - this.x); this.x += Math.cos(a) * this.speed * 0.6; this.y += Math.sin(a) * this.speed * 0.6; }
             } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
                 pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, Math.floor(prey.x / TILE_SIZE), Math.floor(prey.y / TILE_SIZE)) || []; this.pathTimer = 10;
                 if (this.path.length === 0) { this.state = 'IDLE'; this.huntTargetId = null; }
@@ -918,7 +1046,7 @@ class Ant {
                         // KIDNAP CONVERSION
                         if (this.carriedBrood.teamId !== this.team) {
                             this.carriedBrood.teamId = this.team;
-                            spawnText(this.x, this.y - 20, "Converted!", state.teams[this.team].color);
+                            if (this.team === 0) spawnText(this.x, this.y - 20, "Converted!", state.teams[this.team].color);
                         }
                         this.carriedBrood = null; this.state = 'IDLE';
                     } else if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
@@ -966,7 +1094,7 @@ class Ant {
             if (aspect > 1) drawH = size / aspect; else drawW = size * aspect;
             ctx.drawImage(asset.img, -drawW / 2, -drawH / 2, drawW, drawH);
         } else {
-            ctx.fillStyle = this.type === 'queen' ? '#9b59b6' : this.type === 'super_major' ? '#a8453c' : this.type === 'major' ? '#c1793f' : '#d9a441';
+            ctx.fillStyle = this.type === 'queen' ? '#9b59b6' : this.type === 'super_major' ? '#a8453c' : this.type === 'major' ? '#c1793f' : this.type === 'acid' ? '#8bc34a' : '#d9a441';
             ctx.beginPath(); ctx.ellipse(0, 0, size / 2, size / 3, 0, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(size / 3, -2, 4, 4);
         }
@@ -1034,6 +1162,15 @@ function setTool(tool) {
 }
 document.querySelectorAll('.tool-btn').forEach(btn => btn.addEventListener('click', () => setTool(btn.dataset.tool)));
 
+document.querySelectorAll('.order-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.order-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.teams[0].order = btn.dataset.order;
+        toast("Colony Order: " + btn.dataset.order.toUpperCase());
+    });
+});
+
 function getWorldPos(e) {
     const rect = canvas.getBoundingClientRect();
     const cx = (e.clientX - rect.left - canvas.width / 2) / camera.zoom + (canvas.width / 2 + camera.x);
@@ -1077,6 +1214,7 @@ function buyAnt(type, seedCost, meatCost) {
 document.getElementById('spawn-minor').onclick = () => buyAnt('minor', 2, 0);
 document.getElementById('spawn-major').onclick = () => buyAnt('major', 3, 1);
 document.getElementById('spawn-super').onclick = () => buyAnt('super_major', 4, 2);
+document.getElementById('spawn-acid').onclick = () => buyAnt('acid', 5, 1);
 
 function updateUI() {
     if (!state) return;
@@ -1087,6 +1225,7 @@ function updateUI() {
     document.getElementById('spawn-minor').disabled = pTeam.resources.seeds < 2;
     document.getElementById('spawn-major').disabled = pTeam.resources.seeds < 3 || pTeam.resources.meat < 1;
     document.getElementById('spawn-super').disabled = pTeam.resources.seeds < 4 || pTeam.resources.meat < 2;
+    document.getElementById('spawn-acid').disabled = pTeam.resources.seeds < 5 || pTeam.resources.meat < 1;
     document.getElementById('queen-hunger-fill').style.width = Math.max(0, pTeam.queenHunger) + '%';
     document.getElementById('queen-hunger-fill').style.background = pTeam.queenHunger < 30 ? 'var(--brick)' : (pTeam.queenHunger < 60 ? 'var(--clay)' : 'var(--moss)');
 
@@ -1112,7 +1251,7 @@ function updateActionPrompt() {
     let larvaHere = state.brood.find(b => b.teamId === ant.team && !b.carriedBy && b.stage === 'larva' && b.needsFood && !b.fed && b.x === ant.gx && b.y === ant.gy);
     
     let msg = null;
-    if (enemy) msg = "Space: Attack enemy ant";
+    if (enemy) msg = ant.type === 'acid' ? "Space: Shoot acid" : "Space: Attack enemy ant";
     else if (larvaHere && (ant.state === 'CARRYING_RESOURCE' || itemHere || state.teams[ant.team].resources.seeds > 0)) msg = "Space: Feed larva";
     else if (ant.state === 'CARRYING_DIRT') msg = "Space: Place wall";
     else if (ant.state === 'CARRYING_RESOURCE' && onQueen) msg = "Space: Feed the queen";
@@ -1140,6 +1279,9 @@ function update() {
     let maxCamX = WORLD_MAX_GX * TILE_SIZE - canvas.width / camera.zoom;
     if (camera.x < minCamX) camera.x = minCamX;
     if (camera.x > maxCamX) camera.x = maxCamX;
+
+    state.projectiles.forEach(p => p.update());
+    state.projectiles = state.projectiles.filter(p => p.life > 0);
 
     state.entities.forEach(ant => ant.update());
     state.entities = state.entities.filter(ant => {
@@ -1176,19 +1318,23 @@ function update() {
             if (team.queenHunger > 25 && Math.random() < 0.002) layEgg('minor', team.id, true);
         }
         
-        // Rival AI Macro Logic
+        // Rival AI Macro Logic (Infiltration / Raiding)
         if (!team.isPlayer && queen) {
-            if (team.resources.seeds >= 4 && team.resources.meat >= 2 && Math.random() < 0.05) { team.resources.seeds -= 4; team.resources.meat -= 2; layEgg('super_major', team.id, true); }
+            if (team.resources.seeds >= 5 && team.resources.meat >= 1 && Math.random() < 0.05) { team.resources.seeds -= 5; team.resources.meat -= 1; layEgg('acid', team.id, true); }
+            else if (team.resources.seeds >= 4 && team.resources.meat >= 2 && Math.random() < 0.05) { team.resources.seeds -= 4; team.resources.meat -= 2; layEgg('super_major', team.id, true); }
             else if (team.resources.seeds >= 3 && team.resources.meat >= 1 && Math.random() < 0.05) { team.resources.seeds -= 3; team.resources.meat -= 1; layEgg('major', team.id, true); }
             else if (team.resources.seeds >= 2 && Math.random() < 0.1) { team.resources.seeds -= 2; layEgg('minor', team.id, true); }
 
             let myPop = state.entities.filter(e => e.team === team.id).length;
-            if (myPop > 12 && Math.random() < 0.005) {
+            if (myPop > 20 && team.order !== 'attack') {
                 let enemyQueens = state.entities.filter(e => e.type === 'queen' && e.team !== team.id);
                 if (enemyQueens.length > 0) {
-                    let targetQueen = enemyQueens[Math.floor(Math.random() * enemyQueens.length)];
-                    state.pheromones.push({ x: targetQueen.x, y: targetQueen.y, type: 'attack', birthTime: state.time, teamId: team.id });
+                    team.order = 'attack';
+                    team.targetTeam = enemyQueens[Math.floor(Math.random() * enemyQueens.length)].team;
+                    spawnText(queen.x, queen.y - 40, "RAIDING!", team.color, 20);
                 }
+            } else if (myPop < 10 && team.order === 'attack') {
+                team.order = 'auto'; // Fall back if losing too many ants
             }
         }
     });
@@ -1196,6 +1342,43 @@ function update() {
     updateBrood();
     if (state.shake > 0) { state.shake *= 0.9; if (state.shake < 0.5) state.shake = 0; }
     updateActionPrompt(); if (Math.floor(state.time * 100) % 20 === 0) updateUI();
+}
+
+function drawDecoration(d) {
+    const px = d.x * TILE_SIZE + TILE_SIZE / 2, py = d.y * TILE_SIZE + TILE_SIZE / 2;
+    if (d.type === 'grass') {
+        ctx.strokeStyle = '#42621f'; ctx.lineWidth = 2;
+        for (let i = -1; i <= 1; i++) {
+            ctx.beginPath(); ctx.moveTo(px + i * 5, py + 6);
+            ctx.lineTo(px + i * 5 + Math.sin(state.time + i) * 3, py - 10);
+            ctx.stroke();
+        }
+    } else if (d.type === 'pebble') {
+        ctx.fillStyle = '#77766c';
+        ctx.beginPath(); ctx.ellipse(px, py + 6, 7, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#8f8e82';
+        ctx.beginPath(); ctx.ellipse(px - 2, py + 4, 3, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (d.type === 'flower') {
+        ctx.strokeStyle = '#5c7644'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(px, py + 6); ctx.lineTo(px, py - 8); ctx.stroke();
+        ctx.fillStyle = '#e91e63';
+        for(let i=0; i<5; i++) {
+            ctx.beginPath(); ctx.ellipse(px + Math.cos(i*Math.PI*2/5)*4, py - 8 + Math.sin(i*Math.PI*2/5)*4, 3, 3, 0, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.fillStyle = '#ffeb3b'; ctx.beginPath(); ctx.arc(px, py - 8, 2, 0, Math.PI*2); ctx.fill();
+    } else if (d.type === 'root') {
+        ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(px - 10, py - 20); ctx.quadraticCurveTo(px, py, px + 10, py + 20); ctx.stroke();
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.quadraticCurveTo(px - 10, py + 10, px - 15, py + 15); ctx.stroke();
+    } else if (d.type === 'bone') {
+        ctx.fillStyle = '#d7ccc8';
+        ctx.beginPath(); ctx.ellipse(px, py, 12, 4, Math.PI/6, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px - 10, py - 7, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px - 7, py - 10, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px + 10, py + 7, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px + 7, py + 10, 3, 0, Math.PI*2); ctx.fill();
+    }
 }
 
 function draw() {
@@ -1239,6 +1422,17 @@ function draw() {
 
     function inView(x, y) { return x >= viewLeft && x <= viewRight && y >= viewTop && y <= viewBottom; }
 
+    // Draw Decorations
+    const cxMin = Math.floor(gxMin / CHUNK_SIZE), cxMax = Math.floor(gxMax / CHUNK_SIZE);
+    const cyMin = Math.floor(gyMin / CHUNK_SIZE), cyMax = Math.floor(gyMax / CHUNK_SIZE);
+    for (let ccy = cyMin; ccy <= cyMax; ccy++) {
+        for (let ccx = cxMin; ccx <= cxMax; ccx++) {
+            const decos = decorations.get(chunkKey(ccx, ccy));
+            if (!decos) continue;
+            for (const d of decos) { if (inView(d.x * TILE_SIZE, d.y * TILE_SIZE)) drawDecoration(d); }
+        }
+    }
+
     ctx.fillStyle = 'rgba(224, 149, 79, 0.28)'; state.jobs.forEach(job => { if (job.type === 'DIG' && inView(job.x * TILE_SIZE, job.y * TILE_SIZE)) ctx.fillRect(job.x * TILE_SIZE, job.y * TILE_SIZE, TILE_SIZE, TILE_SIZE); });
     
     state.pheromones.forEach(p => {
@@ -1264,6 +1458,7 @@ function draw() {
         drawBroodShape(bx, by, b.stage, b.teamId);
     });
 
+    state.projectiles.forEach(p => { if (inView(p.x, p.y)) p.draw(); });
     state.flies.forEach(f => { if (inView(f.x, f.y)) f.draw(); });
     state.entities.forEach(ant => { if (inView(ant.x, ant.y)) ant.draw(); });
     state.particles.forEach(p => { if (inView(p.x, p.y)) p.draw(); });
