@@ -250,7 +250,7 @@ const ASSETS = {
     minor: { src: 'https://gnome-steader.github.io/Ant-game/minor.png', img: new Image(), loaded: false, fallback: '#d9a441' },
     major: { src: 'https://gnome-steader.github.io/Ant-game/major.png', img: new Image(), loaded: false, fallback: '#c1793f' },
     super_major: { src: 'https://gnome-steader.github.io/Ant-game/super-major.png', img: new Image(), loaded: false, fallback: '#a8453c' },
-    acid: { src: '', img: new Image(), loaded: false, fallback: '#8bc34a' }, // New Acid Ant
+    acid: { src: '', img: new Image(), loaded: false, fallback: '#8bc34a' },
     army_ant: { src: 'https://gnome-steader.github.io/Ant-game/army_ant.png', img: new Image(), loaded: false, fallback: '#8b2a2a' },
     dirt_tile: { src: 'https://gnome-steader.github.io/Ant-game/dirt_tile.png', img: new Image(), loaded: false, fallback: '#4a3826' },
     dirt_ball: { src: 'https://gnome-steader.github.io/Ant-game/dirt_ball.png', img: new Image(), loaded: false, fallback: '#6b4a2b' },
@@ -451,7 +451,7 @@ const STATS = {
     minor: { hp: 15, dmg: 2, speed: 3.3 },
     major: { hp: 40, dmg: 8, speed: 2.4 }, 
     super_major: { hp: 80, dmg: 15, speed: 1.8 },
-    acid: { hp: 25, dmg: 12, speed: 2.2 } // New Acid Ant
+    acid: { hp: 25, dmg: 12, speed: 2.2 }
 };
 
 class Projectile {
@@ -871,16 +871,47 @@ class Ant {
                 this.personalOrder = 'auto'; // Revert if leader dies
                 return;
             }
-            if (distSq(this.x, this.y, target.x, target.y) > (TILE_SIZE * 3)**2) {
+            let dist = distSq(this.x, this.y, target.x, target.y);
+            if (dist > (TILE_SIZE * 2.5)**2) {
                 if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
-                    pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, target.gx, target.gy) || []; this.pathTimer = 30;
+                    pathfindsThisFrame++; 
+                    let r = 3;
+                    let tgx = target.gx + Math.floor(Math.random() * (r*2+1)) - r;
+                    let tgy = target.gy + Math.floor(Math.random() * (r*2+1)) - r;
+                    if (isWall(tgx, tgy)) { tgx = target.gx; tgy = target.gy; }
+                    this.path = findPath(this.gx, this.gy, tgx, tgy) || []; 
+                    this.pathTimer = 15 + Math.floor(Math.random() * 15);
+                }
+                return;
+            } else {
+                if (this.pathTimer <= 0 && Math.random() < 0.1 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    let nx = this.gx + Math.floor(Math.random() * 3) - 1;
+                    let ny = this.gy + Math.floor(Math.random() * 3) - 1;
+                    if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                    this.pathTimer = 20 + Math.floor(Math.random() * 20);
                 }
                 return;
             }
         } else if (order === 'defend') {
-            if (myQueen && distSq(this.x, this.y, myQueen.x, myQueen.y) > (TILE_SIZE * 6)**2) {
+            if (myQueen && distSq(this.x, this.y, myQueen.x, myQueen.y) > (TILE_SIZE * 5)**2) {
                 if (this.pathTimer <= 0 && pathfindsThisFrame < 2) {
-                    pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, myQueen.gx, myQueen.gy) || []; this.pathTimer = 30;
+                    pathfindsThisFrame++; 
+                    let r = 4;
+                    let tgx = myQueen.gx + Math.floor(Math.random() * (r*2+1)) - r;
+                    let tgy = myQueen.gy + Math.floor(Math.random() * (r*2+1)) - r;
+                    if (isWall(tgx, tgy)) { tgx = myQueen.gx; tgy = myQueen.gy; }
+                    this.path = findPath(this.gx, this.gy, tgx, tgy) || []; 
+                    this.pathTimer = 20 + Math.floor(Math.random() * 20);
+                }
+                return;
+            } else {
+                if (this.pathTimer <= 0 && Math.random() < 0.05 && pathfindsThisFrame < 2) {
+                    pathfindsThisFrame++;
+                    let nx = this.gx + Math.floor(Math.random() * 5) - 2;
+                    let ny = this.gy + Math.floor(Math.random() * 5) - 2;
+                    if (!isWall(nx, ny)) this.path = findPath(this.gx, this.gy, nx, ny) || [];
+                    this.pathTimer = 30 + Math.floor(Math.random() * 20);
                 }
                 return;
             }
@@ -910,7 +941,13 @@ class Ant {
             }
 
             if (target && this.pathTimer <= 0 && pathfindsThisFrame < 2) {
-                pathfindsThisFrame++; this.path = findPath(this.gx, this.gy, target.gx, target.gy) || []; this.pathTimer = 40;
+                pathfindsThisFrame++; 
+                let r = 2;
+                let tgx = target.gx + Math.floor(Math.random() * (r*2+1)) - r;
+                let tgy = target.gy + Math.floor(Math.random() * (r*2+1)) - r;
+                if (isWall(tgx, tgy)) { tgx = target.gx; tgy = target.gy; }
+                this.path = findPath(this.gx, this.gy, tgx, tgy) || []; 
+                this.pathTimer = 20 + Math.floor(Math.random() * 20);
                 return;
             }
         }
